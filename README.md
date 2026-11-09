@@ -19,6 +19,8 @@ The site is in Russian and English (picked from the browser, with a switch), wit
   | Open the front record (while digging) | Enter | a click on it | tap |
   | Close the record, then stop digging | Esc, Esc | ✕ or a click outside; **Back to the collection** | the same |
 
+  The wheel and two-finger trackpad swipes follow the hand: down means the next record, like ↓ (on Apple devices, where scrolling is "natural" by default, the browser reports a downward swipe as scrolling up, so the direction is turned there; a Mac with natural scrolling switched off gets it reversed — the browser cannot see that setting). One swipe, with its inertia, moves one step; the next step needs a short pause (160 ms without wheel events).
+
   The address keeps the place (`?s=J&r=2` is the third record of pile J), so a reload or a shared link opens the same record at the front.
 - **Wall.** Every cover in a grid, under the same grouping.
 - **Normal or reverse order** for any grouping, in stacks and on the wall: the button reverses both the order of the stacks and the records in each one (Z…A, newest first), keeps the same stack in the middle, and is kept in the address (`?o=desc`).
