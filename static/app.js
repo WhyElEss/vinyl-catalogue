@@ -478,28 +478,58 @@
   // deltaY there; elsewhere a wheel turned down gives a positive one. The
   // browser cannot tell whether natural scrolling is switched off.
   //
-  // One step per gesture: a trackpad sends a stream of small events and then
-  // its inertia, so after a step the stream is ignored until it stops
-  // (WHEEL_QUIET ms without events). Separate wheel notches are separate
-  // gestures.
+  // One step per gesture: a trackpad sends a stream of events for the swipe
+  // and then keeps sending its inertia, whose deltas only shrink. After a
+  // step the stream is ignored until one of these:
+  //   - it stops (WHEEL_QUIET ms without events);
+  //   - it changes direction;
+  //   - the deltas fell to half their peak or less and then grow again:
+  //     a new swipe started over the old one's inertia.
+  // WHEEL_MIN_GAP keeps one swipe from making two steps in a row.
   const NATURAL = /Mac|iPhone|iPad|iPod/i.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "");
-  const WHEEL_STEP = 25, WHEEL_QUIET = 160;
-  let wheelAcc = 0, wheelBusy = false, wheelTimer = 0;
+  const WHEEL_STEP = 25, WHEEL_QUIET = 100, WHEEL_MIN_GAP = 80;
+  const wheel = { acc: 0, busy: false, timer: 0, at: 0, peak: 0, low: Infinity, sign: 0 };
+  function wheelReset() {
+    wheel.busy = false;
+    wheel.acc = 0;
+    wheel.peak = 0;
+    wheel.low = Infinity;
+    wheel.sign = 0;
+  }
   function onWheel(e) {
     if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; // native sideways scrolling
     e.preventDefault();
-    clearTimeout(wheelTimer);
-    wheelTimer = setTimeout(() => {
-      wheelBusy = false;
-      wheelAcc = 0;
-    }, WHEEL_QUIET);
-    if (wheelBusy) return;
-    wheelAcc += e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY; // lines → pixels
-    if (Math.abs(wheelAcc) < WHEEL_STEP) return;
-    let dir = wheelAcc > 0 ? 1 : -1;
+    const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY; // lines → pixels
+    if (!delta) return;
+    const size = Math.abs(delta), sign = Math.sign(delta);
+    const now = performance.now();
+    clearTimeout(wheel.timer);
+    wheel.timer = setTimeout(wheelReset, WHEEL_QUIET);
+    if (wheel.busy) {
+      // low is the smallest delta since the latest peak, so a swipe still
+      // speeding up never counts as decayed.
+      const turned = sign !== wheel.sign;
+      const decayed = wheel.low <= wheel.peak * 0.5;
+      const again = decayed && size >= wheel.low * 2 + 2;
+      if (size > wheel.peak) {
+        wheel.peak = size;
+        wheel.low = Infinity;
+      } else {
+        wheel.low = Math.min(wheel.low, size);
+      }
+      if (!(turned || again) || now - wheel.at < WHEEL_MIN_GAP) return;
+      wheelReset();
+    }
+    wheel.acc += delta;
+    if (Math.abs(wheel.acc) < WHEEL_STEP) return;
+    let dir = wheel.acc > 0 ? 1 : -1;
     if (NATURAL) dir = -dir;
-    wheelBusy = true;
-    wheelAcc = 0;
+    wheel.busy = true;
+    wheel.acc = 0;
+    wheel.at = now;
+    wheel.sign = sign;
+    wheel.peak = size;
+    wheel.low = Infinity;
     if (state.open) flip(dir);
     else go(center + dir);
   }

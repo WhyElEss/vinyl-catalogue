@@ -19,7 +19,7 @@ The site is in Russian and English (picked from the browser, with a switch), wit
   | Open the front record (while digging) | Enter | a click on it | tap |
   | Close the record, then stop digging | Esc, Esc | ✕ or a click outside; **Back to the collection** | the same |
 
-  The wheel and two-finger trackpad swipes follow the hand: down means the next record, like ↓ (on Apple devices, where scrolling is "natural" by default, the browser reports a downward swipe as scrolling up, so the direction is turned there; a Mac with natural scrolling switched off gets it reversed — the browser cannot see that setting). One swipe, with its inertia, moves one step; the next step needs a short pause (160 ms without wheel events).
+  The wheel and two-finger trackpad swipes follow the hand: down means the next record, like ↓ (on Apple devices, where scrolling is "natural" by default, the browser reports a downward swipe as scrolling up, so the direction is turned there; a Mac with natural scrolling switched off gets it reversed — the browser cannot see that setting). One swipe, with its inertia, moves one step. A new swipe counts at once, even while the previous one's inertia is still arriving: the inertia only slows down, so speeding up again after it slowed to half marks a new swipe (as does a change of direction or 100 ms without wheel events); two steps are at least 80 ms apart.
 
   The address keeps the place (`?s=J&r=2` is the third record of pile J), so a reload or a shared link opens the same record at the front.
 - **Wall.** Every cover in a grid, under the same grouping.
