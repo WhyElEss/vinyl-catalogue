@@ -471,16 +471,35 @@
   // Wheel and trackpad: sideways moves between stacks. Up and down flips
   // records while digging, and moves between stacks in the overview (a
   // mouse wheel has no sideways).
-  let wheelAcc = 0, wheelLock = 0;
+  //
+  // Direction: the gesture moves the way the hand does, like the ↓ key —
+  // fingers or wheel down = the next record. Apple devices scroll
+  // "naturally" by default, so a downward swipe arrives as a negative
+  // deltaY there; elsewhere a wheel turned down gives a positive one. The
+  // browser cannot tell whether natural scrolling is switched off.
+  //
+  // One step per gesture: a trackpad sends a stream of small events and then
+  // its inertia, so after a step the stream is ignored until it stops
+  // (WHEEL_QUIET ms without events). Separate wheel notches are separate
+  // gestures.
+  const NATURAL = /Mac|iPhone|iPad|iPod/i.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "");
+  const WHEEL_STEP = 25, WHEEL_QUIET = 160;
+  let wheelAcc = 0, wheelBusy = false, wheelTimer = 0;
   function onWheel(e) {
     if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; // native sideways scrolling
     e.preventDefault();
-    const now = Date.now();
-    wheelAcc += e.deltaY;
-    if (now < wheelLock || Math.abs(wheelAcc) < 40) return;
-    const dir = wheelAcc > 0 ? 1 : -1;
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(() => {
+      wheelBusy = false;
+      wheelAcc = 0;
+    }, WHEEL_QUIET);
+    if (wheelBusy) return;
+    wheelAcc += e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY; // lines → pixels
+    if (Math.abs(wheelAcc) < WHEEL_STEP) return;
+    let dir = wheelAcc > 0 ? 1 : -1;
+    if (NATURAL) dir = -dir;
+    wheelBusy = true;
     wheelAcc = 0;
-    wheelLock = now + 220;
     if (state.open) flip(dir);
     else go(center + dir);
   }
