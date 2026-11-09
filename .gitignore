@@ -1,0 +1,9 @@
+# secrets and runtime data — never commit
+.env
+*.env
+!.env.example
+data/
+vinyl-catalogue
+.DS_Store
+# reference recordings, kept out of the repository
+*.mov

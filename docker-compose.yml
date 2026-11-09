@@ -1,0 +1,36 @@
+# Lives on the host next to .env. CI publishes every commit on main as
+# ghcr.io/whyeless/vinyl-catalogue:<7-char commit>; VINYL_TAG in .env picks one.
+# To update: set VINYL_TAG, then docker compose pull && docker compose up -d
+name: vinyl
+
+services:
+  vinyl:
+    image: ghcr.io/whyeless/vinyl-catalogue:${VINYL_TAG:?set VINYL_TAG in .env}
+    container_name: vinyl
+    restart: unless-stopped
+    # format: raw — the Discogs token is read literally, never interpolated.
+    env_file:
+      - path: .env
+        format: raw
+    ports:
+      - "${HOST_PORT:-8097}:8097"
+    volumes:
+      # catalogue.json (collection, release details, original years) and covers/.
+      - data:/data
+    networks:
+      - net
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  data:
+    name: vinyl_data
+
+networks:
+  net:
+    name: vinyl_net

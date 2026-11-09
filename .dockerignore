@@ -1,0 +1,7 @@
+.git
+.github
+.env
+data
+vinyl-catalogue
+*.md
+*.mov
