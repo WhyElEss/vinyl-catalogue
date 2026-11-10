@@ -621,9 +621,10 @@
     press(dir > 0 ? "ArrowDown" : "ArrowUp");
   }
 
-  // Touch: every swipe is one arrow-key press in the finger's direction —
-  // down = ↓, up = ↑, right = →, left = ←. The rail does not follow the
-  // finger (touch-action in style.css).
+  // Touch: every swipe is one arrow-key press — finger down = ↓, up = ↑;
+  // sideways the finger pushes the row like a page: moving left brings the
+  // next pile (→), moving right the previous one (←). The rail itself does
+  // not follow the finger (touch-action in style.css).
   let touch = null;
   function onTouchStart(e) {
     const t = e.changedTouches[0];
@@ -636,7 +637,7 @@
     touch = null;
     const ax = Math.abs(dx), ay = Math.abs(dy);
     if (ay > 40 && ay > ax * 1.5) press(dy > 0 ? "ArrowDown" : "ArrowUp");
-    else if (ax > 40 && ax > ay * 1.5) press(dx > 0 ? "ArrowRight" : "ArrowLeft");
+    else if (ax > 40 && ax > ay * 1.5) press(dx < 0 ? "ArrowRight" : "ArrowLeft");
   }
 
   // ---- release overlay ----
