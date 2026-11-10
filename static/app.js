@@ -367,26 +367,38 @@
       pile.classList.add("bump");
       return;
     }
-    const old = pile.querySelector(".rec");
-    // The record leaving the front falls forward (going deeper) or comes
-    // back up from the crate's front (going back).
-    const ghost = old.cloneNode(true);
-    ghost.className = "rec ghost tilt-out";
-    if (dir < 0) {
-      ghost.replaceChildren(cover(g.items[next], true));
-      ghost.className = "rec ghost tilt-in";
+    // A flip still running is cut short, so quick flips never stack up.
+    pile.querySelectorAll(".rec.ghost").forEach((x) => x.remove());
+    const front = pile.querySelector(".rec:not(.ghost)");
+    front.classList.remove("rise", "hold");
+    // Going back is going forward played backwards, with the same length
+    // and mirrored easing: the record that fell comes back up over the
+    // front one (tilt-in), while the front one settles back into the pile
+    // (sink). The real front stays hidden until the returning record is up.
+    const ghosts = [];
+    const ghost = (cls, child) => {
+      const x = el("div", "rec ghost " + cls);
+      x.appendChild(child);
+      pile.appendChild(x);
+      ghosts.push(x);
+      return x;
+    };
+    if (dir > 0) {
+      ghost("tilt-out", cover(g.items[state.pos], true)); // the front record falls forward
+    } else {
+      ghost("sink", cover(g.items[state.pos], true)); // the front record goes back into the pile
+      ghost("tilt-in", cover(g.items[next], true)); // the fallen one comes back up
     }
-    pile.appendChild(ghost);
-    ghost.addEventListener("animationend", () => ghost.remove(), { once: true });
-    setTimeout(() => ghost.remove(), 700);
+    const done = () => {
+      ghosts.forEach((x) => x.remove());
+      front.classList.remove("hold");
+    };
+    ghosts[ghosts.length - 1].addEventListener("animationend", done, { once: true });
+    setTimeout(done, 700);
     state.pos = next;
     paintSlot(center, next);
-    if (dir > 0) {
-      const front = pile.querySelector(".rec:not(.ghost)");
-      front.classList.remove("rise");
-      void front.offsetWidth;
-      front.classList.add("rise");
-    }
+    void front.offsetWidth;
+    front.classList.add(dir > 0 ? "rise" : "hold");
     syncURL();
   }
 

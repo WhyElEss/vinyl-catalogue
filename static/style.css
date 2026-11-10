@@ -214,9 +214,14 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 /* Room under the piles for the tallest fallen pile. */
 .rail.is-dig .pile { margin-bottom: 66px; }
 .rec.ghost { z-index: 2; pointer-events: none; }
+/* Forward: the front record falls (tilt-out) while the next one rises
+   (rise). Back: exactly the same played in reverse — same length, the time-
+   reversed easing curves: (x1,y1,x2,y2) → (1−x2,1−y2,1−x1,1−y1). */
 .rec.tilt-out { animation: tilt-out 0.42s cubic-bezier(.4,0,.7,.4) forwards; }
-.rec.tilt-in { animation: tilt-in 0.38s cubic-bezier(.2,.7,.3,1) forwards; }
 .rec.rise { animation: rise-up 0.42s cubic-bezier(.2,.7,.3,1); }
+.rec.tilt-in { animation: tilt-in 0.42s cubic-bezier(.3,.6,.6,1) forwards; }
+.rec.sink { z-index: 1; animation: sink 0.42s cubic-bezier(.7,0,.8,.3) forwards; }
+.rec.hold { visibility: hidden; }
 @keyframes tilt-out {
   to { transform: translateY(14%) rotateX(-62deg); opacity: 0; filter: brightness(.5); }
 }
@@ -226,6 +231,9 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 }
 @keyframes rise-up {
   from { transform: translateY(-5%) scale(.97); filter: brightness(.7); }
+}
+@keyframes sink {
+  to { transform: translateY(-5%) scale(.97); filter: brightness(.7); }
 }
 .pile.bump { animation: bump 0.3s; }
 @keyframes bump { 30% { transform: translateY(-2%); } 60% { transform: translateY(1%); } }
