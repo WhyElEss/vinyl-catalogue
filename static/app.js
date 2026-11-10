@@ -621,8 +621,9 @@
     press(dir > 0 ? "ArrowDown" : "ArrowUp");
   }
 
-  // Touch: sideways swipes scroll the rail natively; a vertical swipe is a
-  // key press (finger down = ↓).
+  // Touch: every swipe is one arrow-key press in the finger's direction —
+  // down = ↓, up = ↑, right = →, left = ←. The rail does not follow the
+  // finger (touch-action in style.css).
   let touch = null;
   function onTouchStart(e) {
     const t = e.changedTouches[0];
@@ -633,8 +634,9 @@
     const t = e.changedTouches[0];
     const dx = t.clientX - touch.x, dy = t.clientY - touch.y;
     touch = null;
-    // A finger moving down is ↓, up is ↑ (sideways the rail scrolls natively).
-    if (Math.abs(dy) > 40 && Math.abs(dy) > Math.abs(dx) * 1.5) press(dy > 0 ? "ArrowDown" : "ArrowUp");
+    const ax = Math.abs(dx), ay = Math.abs(dy);
+    if (ay > 40 && ay > ax * 1.5) press(dy > 0 ? "ArrowDown" : "ArrowUp");
+    else if (ax > 40 && ax > ay * 1.5) press(dx > 0 ? "ArrowRight" : "ArrowLeft");
   }
 
   // ---- release overlay ----

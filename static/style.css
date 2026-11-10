@@ -165,7 +165,9 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   padding: 24px calc(50% - var(--card) / 2) 16px;
   overscroll-behavior-x: contain;
   position: relative;
-  touch-action: pan-x;
+  /* A finger never scrolls the rail itself: every swipe is an arrow key
+     (app.js); only pinch zoom stays with the browser. */
+  touch-action: pinch-zoom;
 }
 .rail.is-dig { --card: clamp(230px, min(40vh, 58vw), 420px); gap: clamp(16px, 4vw, 70px); }
 .rail::-webkit-scrollbar { display: none; }
