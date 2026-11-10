@@ -495,18 +495,22 @@
   // step the stream is ignored until one of these:
   //   - it stops (WHEEL_QUIET ms without events);
   //   - it changes direction;
-  //   - the deltas fell to half their peak or less and then grow again:
-  //     a new swipe started over the old one's inertia.
-  // WHEEL_MIN_GAP keeps one swipe from making two steps in a row.
+  //   - a new swipe starts over the old one's inertia: the deltas fell to
+  //     40% of the peak or less, and then two events in a row are at least
+  //     2.5× the lowest one + 3 px and at least half the peak again.
+  // WHEEL_MIN_GAP keeps one swipe from making two steps. Tuned on simulated
+  // swipes with ±45% jitter and stalls: no double steps in 2000, while
+  // swipes 220 ms apart, weak ones included, each make a step.
   const NATURAL = /Mac|iPhone|iPad|iPod/i.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "");
-  const WHEEL_STEP = 25, WHEEL_QUIET = 100, WHEEL_MIN_GAP = 80;
-  const wheel = { acc: 0, busy: false, timer: 0, at: 0, peak: 0, low: Infinity, sign: 0 };
+  const WHEEL_STEP = 30, WHEEL_QUIET = 150, WHEEL_MIN_GAP = 140;
+  const wheel = { acc: 0, busy: false, timer: 0, at: 0, peak: 0, low: Infinity, sign: 0, hits: 0 };
   function wheelReset() {
     wheel.busy = false;
     wheel.acc = 0;
     wheel.peak = 0;
     wheel.low = Infinity;
     wheel.sign = 0;
+    wheel.hits = 0;
   }
   function onWheel(e) {
     if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; // native sideways scrolling
@@ -521,15 +525,16 @@
       // low is the smallest delta since the latest peak, so a swipe still
       // speeding up never counts as decayed.
       const turned = sign !== wheel.sign;
-      const decayed = wheel.low <= wheel.peak * 0.5;
-      const again = decayed && size >= wheel.low * 2 + 2;
+      const decayed = wheel.low <= wheel.peak * 0.4;
+      const again = decayed && size >= wheel.low * 2.5 + 3 && size >= wheel.peak * 0.5;
+      wheel.hits = again ? wheel.hits + 1 : 0;
       if (size > wheel.peak) {
         wheel.peak = size;
         wheel.low = Infinity;
-      } else {
+      } else if (!again) {
         wheel.low = Math.min(wheel.low, size);
       }
-      if (!(turned || again) || now - wheel.at < WHEEL_MIN_GAP) return;
+      if (!(turned || wheel.hits >= 2) || now - wheel.at < WHEEL_MIN_GAP) return;
       wheelReset();
     }
     wheel.acc += delta;
@@ -542,6 +547,7 @@
     wheel.sign = sign;
     wheel.peak = size;
     wheel.low = Infinity;
+    wheel.hits = 0;
     if (state.open) flip(dir);
     else go(center + dir);
   }

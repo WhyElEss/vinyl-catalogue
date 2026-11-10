@@ -150,12 +150,25 @@ type base struct {
 	Count     int
 	Version   string
 	Path      string
-	// Link previews.
+	// Link previews, always in English (as on the wishlist): the collection
+	// card by default, a record's own cover on its page.
 	Origin      string
+	OGURL       string
+	SiteName    string
 	OGTitle     string
-	OGImage     string // absolute URL or ""
 	Description string
+	OGImage     string // absolute URL
+	OGImageType string
+	OGImageW    int
+	OGImageH    int
+	TwitterCard string // summary_large_image for the card, summary for a square cover
 }
+
+// The link-preview card (static/og.png).
+const (
+	ogCardW = 1200
+	ogCardH = 630
+)
 
 func (a *App) base(r *http.Request, lang string) base {
 	b := base{Lang: lang, Version: version, Path: r.URL.Path, Origin: a.origin(r)}
@@ -171,8 +184,16 @@ func (a *App) base(r *http.Request, lang string) base {
 	} else {
 		b.Title = t(lang, "collection")
 	}
-	b.OGTitle = b.Title
-	b.Description = releasesCount(lang, b.Count)
+	b.SiteName = texts["en"]["collection"]
+	if b.OwnerName != "" {
+		b.SiteName = fmt.Sprintf(texts["en"]["collection_of"], b.OwnerName)
+	}
+	b.OGTitle = b.SiteName
+	b.OGURL = b.Origin + "/"
+	b.Description = releasesCount("en", b.Count) + ". Dig through the crates."
+	b.OGImage = b.Origin + "/static/og.png?v=" + version
+	b.OGImageType, b.OGImageW, b.OGImageH = "image/png", ogCardW, ogCardH
+	b.TwitterCard = "summary_large_image"
 	return b
 }
 
@@ -231,9 +252,6 @@ func (a *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	txt, _ := json.Marshal(tx)
 	p.Texts = template.JS(txt)
-	if len(p.Releases) > 0 && p.Releases[0].C != "" {
-		p.OGImage = p.Origin + p.Releases[0].C
-	}
 	a.render(w, http.StatusOK, "index", "layout", p)
 }
 

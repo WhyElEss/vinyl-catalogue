@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/jpeg"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -350,5 +352,65 @@ func TestFullSyncReplacesCover(t *testing.T) {
 	}
 	if time.Since(full) > time.Minute {
 		t.Errorf("FullSyncAt not set: %v", full)
+	}
+}
+
+func TestLinkPreviews(t *testing.T) {
+	a, _ := testApp(t)
+	h := a.routes()
+	// The collection page: the English card whatever the visitor's language.
+	b := get(t, h, "/", "Accept-Language", "ru").Body.String()
+	for _, want := range []string{
+		`<meta property="og:title" content="Record Owner&#39;s record collection">`,
+		`<meta property="og:description" content="3 releases. Dig through the crates.">`,
+		`<meta property="og:image" content="http://example.com/static/og.png?v=dev">`,
+		`<meta property="og:image:width" content="1200">`,
+		`<meta property="og:image:height" content="630">`,
+		`<meta property="og:url" content="http://example.com/">`,
+		`<meta property="og:locale" content="en_US">`,
+		`<meta name="twitter:card" content="summary_large_image">`,
+		`href="/static/favicon-32.png?v=dev"`,
+	} {
+		if !strings.Contains(b, want) {
+			t.Errorf("index lacks %s", want)
+		}
+	}
+	// A record's page: its own title, address and English description. The
+	// test covers are not real JPEGs, so the card stays as the image.
+	b = get(t, h, "/release/100/the-beatles-abbey-road", "Accept-Language", "ru").Body.String()
+	for _, want := range []string{
+		`<meta property="og:title" content="The Beatles – Abbey Road">`,
+		`<meta property="og:url" content="http://example.com/release/100/the-beatles-abbey-road">`,
+		`<meta property="og:description" content="1969 · 1 × Vinyl, LP, Album · From Record Owner&#39;s record collection">`,
+	} {
+		if !strings.Contains(b, want) {
+			t.Errorf("release page lacks %s", want)
+		}
+	}
+	for path, ctype := range map[string]string{"/static/og.png": "image/png", "/static/favicon-32.png": "image/png"} {
+		if w := get(t, h, path); w.Code != 200 || w.Header().Get("Content-Type") != ctype {
+			t.Errorf("%s: %d %s", path, w.Code, w.Header().Get("Content-Type"))
+		}
+	}
+}
+
+func TestCoverSize(t *testing.T) {
+	a, _ := testApp(t)
+	// A real 3×2 JPEG in place of a test cover.
+	img := image.NewRGBA(image.Rect(0, 0, 3, 2))
+	f, err := os.Create(a.coverPath(10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	jpeg.Encode(f, img, nil)
+	f.Close()
+	if w, h, ok := a.coverSize(10); !ok || w != 3 || h != 2 {
+		t.Errorf("coverSize = %d×%d %v", w, h, ok)
+	}
+	b := get(t, a.routes(), "/release/100").Body.String()
+	for _, want := range []string{`og:image:type" content="image/jpeg"`, `og:image:width" content="3"`, `twitter:card" content="summary"`, `/cover/10.jpg?v=`} {
+		if !strings.Contains(b, want) {
+			t.Errorf("release with a real cover lacks %s", want)
+		}
 	}
 }

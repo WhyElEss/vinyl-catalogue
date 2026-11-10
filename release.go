@@ -1,7 +1,9 @@
 package main
 
 import (
+	"image/jpeg"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -10,6 +12,7 @@ import (
 // releaseView is what the release templates show.
 type releaseView struct {
 	Instance     int64
+	ID           int64
 	Path         string
 	Artist       string
 	Title        string
@@ -74,14 +77,25 @@ func (a *App) handleRelease(w http.ResponseWriter, r *http.Request) {
 	}
 	b.Title = v.Artist + " – " + v.Title
 	b.OGTitle = b.Title
-	if v.OriginalYear > 0 {
-		b.Description = strconv.Itoa(v.OriginalYear)
+	b.OGURL = b.Origin + v.Path
+	// "1985 · 1 × Vinyl, LP, Album · From Yuri Stanislavski's record collection"
+	var desc []string
+	if y := v.OriginalYear; y > 0 {
+		desc = append(desc, strconv.Itoa(y))
+	} else if v.Year > 0 {
+		desc = append(desc, strconv.Itoa(v.Year))
 	}
 	if len(v.Formats) > 0 {
-		b.Description = strings.TrimPrefix(b.Description+" · "+v.Formats[0], " · ")
+		desc = append(desc, v.Formats[0])
 	}
+	desc = append(desc, "From "+b.SiteName)
+	b.Description = strings.Join(desc, " · ")
 	if v.Cover != "" {
-		b.OGImage = b.Origin + v.Cover
+		if w, h, ok := a.coverSize(v.ID); ok {
+			b.OGImage = b.Origin + v.Cover
+			b.OGImageType, b.OGImageW, b.OGImageH = "image/jpeg", w, h
+			b.TwitterCard = "summary"
+		}
 	}
 	p := releasePage{base: b, R: v}
 	if r.URL.Query().Get("part") == "1" {
@@ -94,6 +108,7 @@ func (a *App) handleRelease(w http.ResponseWriter, r *http.Request) {
 func (a *App) makeReleaseView(lang string, d *Data, r *Release) releaseView {
 	v := releaseView{
 		Instance:     r.Instance,
+		ID:           r.ID,
 		Path:         releasePath(r),
 		Artist:       r.artistLine(),
 		Title:        r.Title,
@@ -135,4 +150,18 @@ func labelsAndNumbers(ls []Label) (names, numbers []string) {
 		}
 	}
 	return names, numbers
+}
+
+// coverSize reads a stored cover's pixel size for the link preview.
+func (a *App) coverSize(id int64) (w, h int, ok bool) {
+	f, err := os.Open(a.coverPath(id))
+	if err != nil {
+		return 0, 0, false
+	}
+	defer f.Close()
+	cfg, err := jpeg.DecodeConfig(f)
+	if err != nil {
+		return 0, 0, false
+	}
+	return cfg.Width, cfg.Height, true
 }

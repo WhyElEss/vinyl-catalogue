@@ -19,7 +19,7 @@ The site is in Russian and English (picked from the browser, with a switch), wit
   | Open the front record (while digging) | Enter | a click on it | tap |
   | Close the record, then stop digging | Esc, Esc | ✕ or a click outside; **Back to the collection** | the same |
 
-  The wheel and two-finger trackpad swipes follow the hand: down means the next record, like ↓ (on Apple devices, where scrolling is "natural" by default, the browser reports a downward swipe as scrolling up, so the direction is turned there; a Mac with natural scrolling switched off gets it reversed — the browser cannot see that setting). One swipe, with its inertia, moves one step. A new swipe counts at once, even while the previous one's inertia is still arriving: the inertia only slows down, so speeding up again after it slowed to half marks a new swipe (as does a change of direction or 100 ms without wheel events); two steps are at least 80 ms apart.
+  The wheel and two-finger trackpad swipes follow the hand: down means the next record, like ↓ (on Apple devices, where scrolling is "natural" by default, the browser reports a downward swipe as scrolling up, so the direction is turned there; a Mac with natural scrolling switched off gets it reversed — the browser cannot see that setting). One swipe, with its inertia, moves one step. A new swipe counts at once, even while the previous one's inertia is still arriving: the inertia only slows down, so two events in a row that speed up again (after it slowed to 40% of its peak, and back to at least half the peak) mark a new swipe, as does a change of direction or 150 ms without wheel events; two steps are at least 140 ms apart.
 
   The address keeps the place (`?s=J&r=2` is the third record of pile J), so a reload or a shared link opens the same record at the front.
 - **Wall.** Every cover in a grid, under the same grouping.
@@ -30,7 +30,8 @@ The site is in Russian and English (picked from the browser, with a switch), wit
 - **Release card** (an overlay on the collection page, and a page of its own at `/release/<id>/<slug>` for direct links): cover, artist, title, original year, genres and styles, labels and catalogue numbers, format as Discogs writes it ("1 × Vinyl, LP, Album, Reissue, Orange"), this pressing's release date and country, the tracklist with headings and durations, the Discogs release notes (folded), and a link to the release on Discogs.
 - **Nothing personal.** The site keeps and shows only what Discogs says about the releases: no date added, no rating, no condition, no notes, no profile.
 - **Themes.** The theme follows the system until the visitor picks one with the button in the header (system → day → night); the choice is kept in the browser.
-- `noindex` for search engines; link-preview crawlers may read the pages, so shared links get a card with the cover.
+- **Link previews**, always in English: the collection page shares a 1200×630 card (`static/og.png`: "My record collection — Dig through the crates", the domain, a record sliding out of its sleeve) with the owner's name and the number of releases in the text; a record's page shares its own cover, title, original year and format. Full Open Graph and Twitter tags, plus `favicon.ico`, `favicon-32.png`, `icon.svg` and a 180×180 `apple-touch-icon.png` for Safari Favorites and the iOS home screen.
+- `noindex` for search engines; link-preview crawlers (Twitter, Facebook, Telegram, Slack, Discord, WhatsApp, LinkedIn, Bluesky's Cardyb) may read the pages.
 
 ## How the collection is read
 
