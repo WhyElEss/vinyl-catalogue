@@ -17,7 +17,7 @@ The site is in Russian and English (picked from the browser, with a switch), wit
   | Start digging the middle pile | ↓ or Enter | a click on it; wheel or two fingers down | tap; finger down |
   | Next / previous record (while digging) | ↓ / ↑ | the ⌄ / ⌃ buttons under the pile; wheel or two fingers down / up | finger down / up |
   | Open the front record (while digging) | Enter | a click on it | tap |
-  | Close the record, then stop digging | Esc, Esc | ✕ or a click outside; **Back to the collection** | the same |
+  | Close the record, then stop digging | Esc, Esc (↑ on the first record also stops digging) | ✕ or a click outside; **Back to the collection**; wheel or two fingers up on the first record | finger up on the first record |
 
   Every vertical gesture is a key press, on every system: a wheel, two fingers on a trackpad or one finger on a screen moving **down** is ↓, moving **up** is ↑. For the wheel and trackpad (on Apple devices, where scrolling is "natural" by default, the browser reports a downward swipe as scrolling up, so the direction is turned there; a Mac with natural scrolling switched off gets it reversed — the browser cannot see that setting). One swipe, with its inertia, moves one step. A new swipe counts at once, even while the previous one's inertia is still arriving: the inertia only slows down, so two events in a row that speed up again (after it slowed to 40% of its peak, and back to at least half the peak) mark a new swipe, as does a change of direction or 150 ms without wheel events; two steps are at least 140 ms apart.
 

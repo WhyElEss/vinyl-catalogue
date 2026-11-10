@@ -2,7 +2,8 @@
 // crates in a record shop:
 //   ← →        move between stacks
 //   ↓ Enter    in the overview: dig into the stack in the middle
-//   ↓ ↑        while digging: flip through the records of that stack
+//   ↓ ↑        while digging: flip through the records of that stack;
+//              ↑ on the first record stops digging, like Esc
 //   Enter      while digging: open the record at the front
 //   Esc        close the record; then stop digging (back to the overview)
 // Every vertical gesture is one of these keys, on every system: a wheel,
@@ -498,7 +499,10 @@
         else enterStack(center); // ↓ in the overview digs into the middle stack
         break;
       case "ArrowUp":
-        if (digging) flip(-1);
+        // ↑ on the first record has nowhere to flip back to: it leaves the
+        // stack, as Esc does (↓ came in, ↑ goes out).
+        if (digging && state.pos > 0) flip(-1);
+        else if (digging) leaveStack();
         break;
       case "Enter":
         if (digging) openRelease(g.items[state.pos].i);
