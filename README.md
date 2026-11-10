@@ -13,13 +13,13 @@ The site is in Russian and English (picked from the browser, with a switch), wit
 
   | | Keyboard | Mouse, trackpad | Touch |
   |---|---|---|---|
-  | Next / previous pile | → / ← | arrow buttons, a click on a side pile, the index under the rail, sideways scrolling; the wheel in the overview | swipe sideways |
-  | Start digging the middle pile | Enter | a click on it | tap |
-  | Next / previous record (while digging) | ↓ / ↑ | the ⌄ / ⌃ buttons under the pile, the wheel | swipe up / down |
+  | Next / previous pile | → / ← | arrow buttons, a click on a side pile, the index under the rail, sideways scrolling | swipe sideways (the row follows the finger) |
+  | Start digging the middle pile | ↓ or Enter | a click on it; wheel or two fingers down | tap; finger down |
+  | Next / previous record (while digging) | ↓ / ↑ | the ⌄ / ⌃ buttons under the pile; wheel or two fingers down / up | finger down / up |
   | Open the front record (while digging) | Enter | a click on it | tap |
   | Close the record, then stop digging | Esc, Esc | ✕ or a click outside; **Back to the collection** | the same |
 
-  The wheel and two-finger trackpad swipes follow the hand: down means the next record, like ↓ (on Apple devices, where scrolling is "natural" by default, the browser reports a downward swipe as scrolling up, so the direction is turned there; a Mac with natural scrolling switched off gets it reversed — the browser cannot see that setting). One swipe, with its inertia, moves one step. A new swipe counts at once, even while the previous one's inertia is still arriving: the inertia only slows down, so two events in a row that speed up again (after it slowed to 40% of its peak, and back to at least half the peak) mark a new swipe, as does a change of direction or 150 ms without wheel events; two steps are at least 140 ms apart.
+  Every vertical gesture is a key press, on every system: a wheel, two fingers on a trackpad or one finger on a screen moving **down** is ↓, moving **up** is ↑. For the wheel and trackpad (on Apple devices, where scrolling is "natural" by default, the browser reports a downward swipe as scrolling up, so the direction is turned there; a Mac with natural scrolling switched off gets it reversed — the browser cannot see that setting). One swipe, with its inertia, moves one step. A new swipe counts at once, even while the previous one's inertia is still arriving: the inertia only slows down, so two events in a row that speed up again (after it slowed to 40% of its peak, and back to at least half the peak) mark a new swipe, as does a change of direction or 150 ms without wheel events; two steps are at least 140 ms apart.
 
   The address keeps the place (`?s=J&r=2` is the third record of pile J), so a reload or a shared link opens the same record at the front.
 - **Wall.** Every cover in a grid, under the same grouping.

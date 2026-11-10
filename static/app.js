@@ -1,13 +1,14 @@
 // The collection page. Records stand in stacks on a horizontal rail, like
 // crates in a record shop:
 //   ← →        move between stacks
-//   Enter      in the overview: dig into the stack in the middle;
-//              while digging: open the record at the front
-//   ↑ ↓        while digging: flip through the records of that stack
+//   ↓ Enter    in the overview: dig into the stack in the middle
+//   ↓ ↑        while digging: flip through the records of that stack
+//   Enter      while digging: open the record at the front
 //   Esc        close the record; then stop digging (back to the overview)
-// The mouse, the wheel, a trackpad and touch do the same. The server put the
-// whole collection into <script id="data"> and the strings into
-// <script id="texts">.
+// Every vertical gesture is one of these keys, on every system: a wheel,
+// two fingers on a trackpad or one finger on a screen moving DOWN is ↓,
+// moving UP is ↑ (see press()). The server put the whole collection into
+// <script id="data"> and the strings into <script id="texts">.
 (() => {
   "use strict";
   const $ = (s, el = document) => el.querySelector(s);
@@ -480,9 +481,41 @@
     syncURL();
   }
 
-  // Wheel and trackpad: sideways moves between stacks. Up and down flips
-  // records while digging, and moves between stacks in the overview (a
-  // mouse wheel has no sideways).
+  // press is the one place where keys and gestures turn into actions.
+  function press(key) {
+    if (!rail || center < 0) return false;
+    const g = gs[center];
+    const digging = state.open === g.key;
+    switch (key) {
+      case "ArrowRight":
+        go(center + 1);
+        break;
+      case "ArrowLeft":
+        go(center - 1);
+        break;
+      case "ArrowDown":
+        if (digging) flip(1);
+        else enterStack(center); // ↓ in the overview digs into the middle stack
+        break;
+      case "ArrowUp":
+        if (digging) flip(-1);
+        break;
+      case "Enter":
+        if (digging) openRelease(g.items[state.pos].i);
+        else enterStack(center);
+        break;
+      case "Escape":
+        if (!state.open) return false;
+        leaveStack();
+        break;
+      default:
+        return false;
+    }
+    return true;
+  }
+
+  // Wheel and trackpad: up and down are the ↑ and ↓ keys (sideways scrolls
+  // the rail natively).
   //
   // Direction: the gesture moves the way the hand does, like the ↓ key —
   // fingers or wheel down = the next record. Apple devices scroll
@@ -548,12 +581,11 @@
     wheel.peak = size;
     wheel.low = Infinity;
     wheel.hits = 0;
-    if (state.open) flip(dir);
-    else go(center + dir);
+    press(dir > 0 ? "ArrowDown" : "ArrowUp");
   }
 
-  // Touch: sideways swipes scroll the rail natively; an up or down swipe
-  // flips the middle stack (swipe up = deeper).
+  // Touch: sideways swipes scroll the rail natively; a vertical swipe is a
+  // key press (finger down = ↓).
   let touch = null;
   function onTouchStart(e) {
     const t = e.changedTouches[0];
@@ -564,7 +596,8 @@
     const t = e.changedTouches[0];
     const dx = t.clientX - touch.x, dy = t.clientY - touch.y;
     touch = null;
-    if (Math.abs(dy) > 40 && Math.abs(dy) > Math.abs(dx) * 1.5) flip(dy < 0 ? 1 : -1);
+    // A finger moving down is ↓, up is ↑ (sideways the rail scrolls natively).
+    if (Math.abs(dy) > 40 && Math.abs(dy) > Math.abs(dx) * 1.5) press(dy > 0 ? "ArrowDown" : "ArrowUp");
   }
 
   // ---- release overlay ----
@@ -681,40 +714,12 @@
       return;
     }
     if (!rail || center < 0) return;
-    switch (e.key) {
-      case "ArrowRight":
-        go(center + 1);
-        break;
-      case "ArrowLeft":
-        go(center - 1);
-        break;
-      case "ArrowDown":
-        flip(1);
-        break;
-      case "ArrowUp":
-        flip(-1);
-        break;
-      case "Home":
-        go(0);
-        break;
-      case "End":
-        go(slots.length - 1);
-        break;
-      case "Enter": {
-        if (t && t.closest && t.closest("button, a")) return; // a focused control does its own thing
-        const g = gs[center];
-        if (state.open === g.key) openRelease(g.items[state.pos].i);
-        else enterStack(center);
-        break;
-      }
-      case "Escape":
-        if (!state.open) return;
-        leaveStack();
-        break;
-      default:
-        return;
-    }
-    e.preventDefault();
+    if (e.key === "Enter" && t && t.closest && t.closest("button, a")) return; // a focused control does its own thing
+    let done;
+    if (e.key === "Home") done = (go(0), true);
+    else if (e.key === "End") done = (go(slots.length - 1), true);
+    else done = press(e.key);
+    if (done) e.preventDefault();
   });
 
   render();
