@@ -328,16 +328,43 @@
     else enterStack(i);
   }
 
+  // zoomTo switches between the overview and digging like a camera moving
+  // in or out: the layout changes at once (bigger or smaller piles, stack i
+  // in the middle), then the whole scene is drawn from where stack i was
+  // before and glides to its new place and size.
+  const ZOOM_MS = 320;
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  function zoomTo(i, change) {
+    const pileOf = () => slots[i].querySelector(".pile").getBoundingClientRect();
+    const wrap = rail.parentNode;
+    const before = pileOf();
+    change();
+    go(i, true); // keep this stack in the middle of the resized rail
+    const after = pileOf();
+    if (reduceMotion.matches || !after.width || !wrap.animate) return;
+    const box = wrap.getBoundingClientRect();
+    const ax = after.left + after.width / 2, ay = after.top + after.height / 2;
+    const bx = before.left + before.width / 2, by = before.top + before.height / 2;
+    const origin = `${ax - box.left}px ${ay - box.top}px`;
+    wrap.animate(
+      [
+        { transformOrigin: origin, transform: `translate(${bx - ax}px, ${by - ay}px) scale(${before.width / after.width})` },
+        { transformOrigin: origin, transform: "none" },
+      ],
+      { duration: ZOOM_MS, easing: "cubic-bezier(.2,.7,.3,1)" }
+    );
+  }
+
   function enterStack(i) {
     const g = gs[i];
     if (!g) return;
     state.open = g.key;
     state.pos = 0;
-    rail.classList.add("is-dig");
-    stage.querySelector(".crumb").hidden = false;
-    paintSlot(i, 0);
-    // The rail grows; keep this stack in the middle.
-    requestAnimationFrame(() => go(i, true));
+    zoomTo(i, () => {
+      rail.classList.add("is-dig");
+      stage.querySelector(".crumb").hidden = false;
+      paintSlot(i, 0);
+    });
     syncURL();
   }
 
@@ -346,12 +373,13 @@
     const i = gs.findIndex((g) => g.key === state.open);
     state.open = null;
     state.pos = 0;
-    rail.classList.remove("is-dig");
-    stage.querySelector(".crumb").hidden = true;
-    if (i >= 0) {
-      paintSlot(i, 0);
-      requestAnimationFrame(() => go(i, true));
-    }
+    const out = () => {
+      rail.classList.remove("is-dig");
+      stage.querySelector(".crumb").hidden = true;
+      if (i >= 0) paintSlot(i, 0);
+    };
+    if (i >= 0) zoomTo(i, out);
+    else out();
     syncURL();
   }
 
