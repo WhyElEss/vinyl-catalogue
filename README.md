@@ -4,7 +4,7 @@ A read-only showcase of one Discogs user's record collection. One Go binary buil
 
 There is no admin panel, no accounts and nothing social: the collection is edited on Discogs, and the site reads it from the Discogs API on its own.
 
-The site is in Russian and English (picked from the browser, with a switch), with a day and a night theme.
+The site is in English only, with a day and a night theme.
 
 ## Features
 
@@ -22,6 +22,7 @@ The site is in Russian and English (picked from the browser, with a switch), wit
   Every vertical gesture is a key press, on every system: a wheel, two fingers on a trackpad or one finger on a screen moving **down** is ↓, moving **up** is ↑. On a touch screen sideways swipes are key presses too: a finger moving **left** brings the next pile (→), **right** the previous one (←), as when turning a page; the row does not follow the finger (only pinch zoom stays with the browser). A trackpad or wheel scrolling sideways still scrolls the row itself. For the wheel and trackpad (on Apple devices, where scrolling is "natural" by default, the browser reports a downward swipe as scrolling up, so the direction is turned there; a Mac with natural scrolling switched off gets it reversed — the browser cannot see that setting). One swipe, with its inertia, moves one step. A new swipe counts at once, even while the previous one's inertia is still arriving: the inertia only slows down, so two events in a row that speed up again (after it slowed to 40% of its peak, and back to at least half the peak) mark a new swipe, as does a change of direction or 150 ms without wheel events; two steps are at least 140 ms apart.
 
   The address keeps the place (`?s=J&r=2` is the third record of pile J), so a reload or a shared link opens the same record at the front.
+- **Phones.** Order and Random are icons only, so all the controls take one row under the search. The sleeve edges and the fallen pile are drawn at 0.6 scale, and the cover you dig through is sized from the screen height, so the record's artist, title and buttons stay above the browser bar that Safari on iOS floats over the bottom of the page.
 - **Wall.** Every cover in a grid, under the same grouping.
 - **Normal or reverse order** for any grouping, in stacks and on the wall: the button reverses both the order of the stacks and the records in each one (Z…A, newest first), keeps the same stack in the middle, and is kept in the address (`?o=desc`).
 - **Order.** Artists are filed the way record shops do it: case and accents are ignored, and a leading "The" is dropped (The Beatles stand under B). Records of one artist go by the year of the original release (the Discogs master), then by title. Latin initials come first, then Cyrillic, then everything else under "#".
@@ -30,7 +31,7 @@ The site is in Russian and English (picked from the browser, with a switch), wit
 - **Release card** (an overlay on the collection page, and a page of its own at `/release/<id>/<slug>` for direct links): cover, artist, title, original year, genres and styles, labels and catalogue numbers, format as Discogs writes it ("1 × Vinyl, LP, Album, Reissue, Orange"), this pressing's release date and country, the tracklist with headings and durations, the Discogs release notes (folded), and a link to the release on Discogs. The overlay grows out of the cover that was chosen (the front record of a pile, a card on the wall): its own cover starts exactly over the small one and the rest of the card fades in around it; closing (×, Esc, a click outside, Back) shrinks it back into that cover. Without a cover on screen (Random, Forward) it rises in and sinks out; none with "reduce motion" on.
 - **Nothing personal.** The site keeps and shows only what Discogs says about the releases: no date added, no rating, no condition, no notes, no profile.
 - **Themes.** The theme follows the system until the visitor picks one with the button in the header (system → day → night); the choice is kept in the browser.
-- **Link previews**, always in English: the collection page shares a 1200×630 card (`static/og.png`: "My record collection — Dig through the crates", the domain, a record sliding out of its sleeve) with the owner's name and the number of releases in the text; a record's page shares its own cover, title, original year and format. Full Open Graph and Twitter tags, plus `favicon.ico`, `favicon-32.png`, `icon.svg` and a 180×180 `apple-touch-icon.png` for Safari Favorites and the iOS home screen.
+- **Link previews**: the collection page shares a 1200×630 card (`static/og.png`: "My record collection — Dig through the crates", the domain, a record sliding out of its sleeve) with the owner's name and the number of releases in the text; a record's page shares its own cover, title, original year and format. Full Open Graph and Twitter tags, plus `favicon.ico`, `favicon-32.png`, `icon.svg` and a 180×180 `apple-touch-icon.png` for Safari Favorites and the iOS home screen.
 - `noindex` for search engines; link-preview crawlers (Twitter, Facebook, Telegram, Slack, Discord, WhatsApp, LinkedIn, Bluesky's Cardyb) may read the pages.
 
 ## How the collection is read
@@ -72,8 +73,8 @@ Covers and data are served from the app itself, so the pages load nothing from o
 | `store.go` | Data model and the JSON store: one lock, atomic file replace |
 | `catalogue.go` | Artist names and sort keys, format lines, dates, notes markup, the JSON for the page script |
 | `release.go` | Release page and the overlay fragment (`?part=1`) |
-| `app.go` | Routes, security headers, rendering, covers, language switch |
-| `i18n.go` | Russian and English texts, Russian plural forms |
+| `app.go` | Routes, security headers, rendering, covers |
+| `i18n.go` | Interface texts (English) |
 | `templates/` | Page layout, collection page, release card |
 | `static/app.js` | Stacks and crate digging, wall, search, grouping, overlay, keyboard, wheel and touch |
 | `static/theme.js` | Theme choice, loaded in `<head>` so the page never flashes the other theme |

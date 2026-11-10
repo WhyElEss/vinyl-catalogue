@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"regexp"
 	"sort"
 	"strconv"
@@ -140,29 +139,11 @@ func sortYear(d *Data, r *Release) int {
 	return r.Year
 }
 
-var months = map[string][]string{
-	"en": {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"},
-	"ru": {"января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"},
-}
-
-var monthsNom = map[string][]string{
-	"en": months["en"],
-	"ru": {"Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"},
-}
-
-func formatDate(lang string, t time.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	if lang == "ru" {
-		return fmt.Sprintf("%d %s %d", t.Day(), months["ru"][t.Month()-1], t.Year())
-	}
-	return t.Format("January 2, 2006")
-}
+var months = []string{"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"}
 
 // formatReleased turns Discogs' "2023-09-15", "1985-05-00", "1985-00-00" or
 // "1985" into a date with only the known parts.
-func formatReleased(lang, s string) string {
+func formatReleased(s string) string {
 	parts := strings.Split(s, "-")
 	y, _ := strconv.Atoi(parts[0])
 	if y == 0 {
@@ -179,9 +160,9 @@ func formatReleased(lang, s string) string {
 	case m < 1 || m > 12:
 		return strconv.Itoa(y)
 	case d == 0:
-		return monthsNom[lang][m-1] + " " + strconv.Itoa(y)
+		return months[m-1] + " " + strconv.Itoa(y)
 	}
-	return formatDate(lang, time.Date(y, time.Month(m), d, 0, 0, 0, 0, time.UTC))
+	return time.Date(y, time.Month(m), d, 0, 0, 0, 0, time.UTC).Format("January 2, 2006")
 }
 
 var (

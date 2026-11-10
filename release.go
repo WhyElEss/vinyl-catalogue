@@ -53,7 +53,6 @@ func releasePath(r *Release) string {
 // handleRelease shows one record. With ?part=1 it answers only the inner
 // article, which the page script puts into its overlay.
 func (a *App) handleRelease(w http.ResponseWriter, r *http.Request) {
-	lang := detectLang(r)
 	inst, err := strconv.ParseInt(r.PathValue("instance"), 10, 64)
 	var v releaseView
 	found := false
@@ -65,14 +64,14 @@ func (a *App) handleRelease(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				found = true
-				v = a.makeReleaseView(lang, d, rel)
+				v = a.makeReleaseView(d, rel)
 				return
 			}
 		})
 	}
-	b := a.base(r, lang)
+	b := a.base(r)
 	if !found {
-		a.render(w, http.StatusNotFound, "message", "layout", messagePage{base: b, Text: t(lang, "not_found")})
+		a.render(w, http.StatusNotFound, "message", "layout", messagePage{base: b, Text: t("not_found")})
 		return
 	}
 	b.Title = v.Artist + " – " + v.Title
@@ -105,7 +104,7 @@ func (a *App) handleRelease(w http.ResponseWriter, r *http.Request) {
 	a.render(w, http.StatusOK, "release", "layout", p)
 }
 
-func (a *App) makeReleaseView(lang string, d *Data, r *Release) releaseView {
+func (a *App) makeReleaseView(d *Data, r *Release) releaseView {
 	v := releaseView{
 		Instance:     r.Instance,
 		ID:           r.ID,
@@ -123,7 +122,7 @@ func (a *App) makeReleaseView(lang string, d *Data, r *Release) releaseView {
 	if det, ok := d.Details[r.ID]; ok {
 		v.HasDetails = true
 		v.Country = det.Country
-		v.Released = formatReleased(lang, det.Released)
+		v.Released = formatReleased(det.Released)
 		v.Tracklist = det.Tracklist
 		v.Notes = cleanNotes(det.Notes)
 	}

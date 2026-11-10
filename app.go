@@ -69,7 +69,6 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /{$}", a.handleIndex)
 	mux.HandleFunc("GET /release/{instance}", a.handleRelease)
 	mux.HandleFunc("GET /release/{instance}/{slug}", a.handleRelease)
-	mux.HandleFunc("GET /lang/{code}", a.handleLang)
 	return a.secure(mux)
 }
 
@@ -98,7 +97,7 @@ func cacheFor(d time.Duration, h http.Handler) http.Handler {
 }
 
 // secure sets the headers every response shares. The site has no forms and
-// no cookies other than the language choice.
+// no cookies.
 func (a *App) secure(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hd := w.Header()
@@ -124,8 +123,8 @@ func (a *App) origin(r *http.Request) string {
 
 var templateFuncs = template.FuncMap{
 	"t": t,
-	"tf": func(lang, key string, args ...any) string {
-		return fmt.Sprintf(t(lang, key), args...)
+	"tf": func(key string, args ...any) string {
+		return fmt.Sprintf(t(key), args...)
 	},
 	"count": releasesCount,
 }
@@ -144,7 +143,6 @@ func loadTemplates() (map[string]*template.Template, error) {
 
 // base is embedded in every page's data and read by the layout.
 type base struct {
-	Lang      string
 	Title     string // <title>
 	OwnerName string
 	Count     int
@@ -170,8 +168,8 @@ const (
 	ogCardH = 630
 )
 
-func (a *App) base(r *http.Request, lang string) base {
-	b := base{Lang: lang, Version: version, Path: r.URL.Path, Origin: a.origin(r)}
+func (a *App) base(r *http.Request) base {
+	b := base{Version: version, Path: r.URL.Path, Origin: a.origin(r)}
 	a.store.view(func(d *Data) {
 		b.OwnerName = d.Owner.Name
 		if b.OwnerName == "" {
@@ -179,18 +177,14 @@ func (a *App) base(r *http.Request, lang string) base {
 		}
 		b.Count = len(d.Releases)
 	})
+	b.Title = t("collection")
 	if b.OwnerName != "" {
-		b.Title = fmt.Sprintf(t(lang, "collection_of"), b.OwnerName)
-	} else {
-		b.Title = t(lang, "collection")
+		b.Title = fmt.Sprintf(t("collection_of"), b.OwnerName)
 	}
-	b.SiteName = texts["en"]["collection"]
-	if b.OwnerName != "" {
-		b.SiteName = fmt.Sprintf(texts["en"]["collection_of"], b.OwnerName)
-	}
+	b.SiteName = b.Title
 	b.OGTitle = b.SiteName
 	b.OGURL = b.Origin + "/"
-	b.Description = releasesCount("en", b.Count) + ". Dig through the crates."
+	b.Description = releasesCount(b.Count) + ". Dig through the crates."
 	b.OGImage = b.Origin + "/static/og.png?v=" + version
 	b.OGImageType, b.OGImageW, b.OGImageH = "image/png", ogCardW, ogCardH
 	b.TwitterCard = "summary_large_image"
@@ -206,7 +200,6 @@ func (a *App) render(w http.ResponseWriter, status int, name, tmpl string, data 
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Vary", "Accept-Language, Cookie")
 	w.WriteHeader(status)
 	w.Write(buf.Bytes())
 }
@@ -223,8 +216,7 @@ var clientTextKeys = []string{"of", "nothing", "prev", "next",
 	"back", "close", "other", "prev_record", "next_record", "enter_stack", "order_asc", "order_desc"}
 
 func (a *App) handleIndex(w http.ResponseWriter, r *http.Request) {
-	lang := detectLang(r)
-	p := indexPage{base: a.base(r, lang)}
+	p := indexPage{base: a.base(r)}
 	a.store.view(func(d *Data) {
 		rs := make([]*Release, len(d.Releases))
 		for i := range d.Releases {
@@ -242,31 +234,14 @@ func (a *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 	})
 	data, _ := json.Marshal(p.Releases)
 	p.Data = template.JS(data)
-	tx := map[string]string{"lang": lang}
+	tx := map[string]string{}
 	for _, k := range clientTextKeys {
-		tx[k] = t(lang, k)
+		tx[k] = t(k)
 	}
-	tx["one"], tx["few"], tx["many"] = "release", "releases", "releases"
-	if lang == "ru" {
-		tx["one"], tx["few"], tx["many"] = "релиз", "релиза", "релизов"
-	}
+	tx["one"], tx["many"] = "release", "releases"
 	txt, _ := json.Marshal(tx)
 	p.Texts = template.JS(txt)
 	a.render(w, http.StatusOK, "index", "layout", p)
-}
-
-func (a *App) handleLang(w http.ResponseWriter, r *http.Request) {
-	code := r.PathValue("code")
-	if code != "ru" && code != "en" {
-		http.NotFound(w, r)
-		return
-	}
-	http.SetCookie(w, &http.Cookie{Name: "lang", Value: code, Path: "/", MaxAge: 365 * 24 * 3600, SameSite: http.SameSiteLaxMode, HttpOnly: true})
-	back := r.URL.Query().Get("back")
-	if !strings.HasPrefix(back, "/") || strings.HasPrefix(back, "//") || strings.Contains(back, "\\") {
-		back = "/"
-	}
-	http.Redirect(w, r, back, http.StatusSeeOther)
 }
 
 // coverURL is the site's own URL for a release's cover, "" without one. The

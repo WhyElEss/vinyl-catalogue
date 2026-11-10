@@ -107,9 +107,6 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 :root:not([data-theme-choice]) #theme-btn .i-auto,
 :root[data-theme-choice="light"] #theme-btn .i-light,
 :root[data-theme-choice="dark"] #theme-btn .i-dark { display: block; }
-.lang { display: flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--surface); }
-.lang a { padding: 9px 11px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-decoration: none; color: var(--muted); }
-.lang a[aria-current] { color: var(--text); background: var(--surface-2); }
 
 /* Toolbar */
 .toolbar {
@@ -177,7 +174,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   scroll-snap-align: center;
   display: flex; flex-direction: column; align-items: center; gap: 16px;
   cursor: pointer; text-align: center; color: inherit;
-  padding-top: 66px; /* room for the sleeve edges of the tallest pile */
+  padding-top: calc(66px * var(--stack-k, 1)); /* room for the sleeve edges of the tallest pile */
   transform: scale(0.9);
   opacity: 0.6;
   transition: transform 0.35s cubic-bezier(.2,.7,.2,1), opacity 0.35s;
@@ -191,7 +188,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
      tallest), as records of one size do when seen from a little above. */
   content: "";
   position: absolute; left: 0; right: 0; bottom: 100%;
-  height: var(--h, 0px);
+  height: calc(var(--h, 0px) * var(--stack-k, 1));
   background: repeating-linear-gradient(to bottom, var(--edge-1) 0 1px, var(--edge-2) 1px 2px, var(--edge-3) 2px 3px);
   clip-path: polygon(calc(var(--taper, 0) * 1%) 0, calc(100% - var(--taper, 0) * 1%) 0, 100% 100%, 0 100%);
   border-radius: 3px 3px 0 0;
@@ -208,7 +205,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
    every flip; nothing before the first one. */
 .fallen {
   position: absolute; left: -1%; right: -1%; top: calc(100% + 4px);
-  height: var(--t, 0px);
+  height: calc(var(--t, 0px) * var(--stack-k, 1));
   pointer-events: none;
   background: repeating-linear-gradient(to bottom, var(--edge-1) 0 1px, var(--edge-2) 1px 2px, var(--edge-3) 2px 3px);
   clip-path: polygon(1.5% 0, 98.5% 0, 100% 100%, 0 100%);
@@ -216,7 +213,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   transition: height 0.3s;
 }
 /* Room under the piles for the tallest fallen pile. */
-.rail.is-dig .pile { margin-bottom: 66px; }
+.rail.is-dig .pile { margin-bottom: calc(66px * var(--stack-k, 1)); }
 .rec.ghost { z-index: 2; pointer-events: none; }
 /* Forward: the front record falls (tilt-out) while the next one rises
    (rise). Back: exactly the same played in reverse — same length, the time-
@@ -337,8 +334,20 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   .toolbar { gap: 8px; }
   .search { flex-basis: 100%; max-width: none; }
   .select span { display: none; }
-  .rail { --card: min(52vw, 34vh); }
-  .rail.is-dig { --card: min(74vw, 44vh); }
+  /* Phones: order and random are icons only, so the controls take one row
+     under the search, and the stack, its label and its buttons fit above
+     a browser bar floating over the bottom of the page (Safari on iOS). */
+  #order span, #random span { display: none; }
+  #order, #random { width: 42px; padding: 0; justify-content: center; }
+  .seg button { padding: 0 12px; }
+  .select { flex: 1 1 0; min-width: 0; padding: 0 4px 0 12px; }
+  .select select { width: 100%; min-width: 0; }
+  /* Sleeve edges and the fallen pile at 0.6 scale, and the digging cover
+     sized from the screen height: what is around it (header, two toolbar
+     rows, the back button, the label with its buttons) takes about 455px,
+     plus 90px kept free at the bottom for the floating browser bar. */
+  .rail { --stack-k: 0.6; --card: min(52vw, 30svh); padding-top: 4px; }
+  .rail.is-dig { --card: clamp(140px, min(66vw, 100svh - 545px), 420px); }
   .nav-btn { display: none; }
   .release { grid-template-columns: 1fr; }
   .release-cover { position: static; max-width: 420px; }

@@ -56,18 +56,16 @@ func TestArtistsAndFormats(t *testing.T) {
 }
 
 func TestFormatReleased(t *testing.T) {
-	cases := []struct{ lang, in, want string }{
-		{"en", "2023-09-15", "September 15, 2023"},
-		{"ru", "2023-09-15", "15 сентября 2023"},
-		{"en", "1985-05-00", "May 1985"},
-		{"ru", "1985-05-00", "Май 1985"},
-		{"en", "1985-00-00", "1985"},
-		{"en", "1985", "1985"},
-		{"en", "", ""},
+	cases := []struct{ in, want string }{
+		{"2023-09-15", "September 15, 2023"},
+		{"1985-05-00", "May 1985"},
+		{"1985-00-00", "1985"},
+		{"1985", "1985"},
+		{"", ""},
 	}
 	for _, c := range cases {
-		if got := formatReleased(c.lang, c.in); got != c.want {
-			t.Errorf("formatReleased(%s, %q) = %q, want %q", c.lang, c.in, got, c.want)
+		if got := formatReleased(c.in); got != c.want {
+			t.Errorf("formatReleased(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
 }
@@ -80,23 +78,11 @@ func TestCleanNotes(t *testing.T) {
 	}
 }
 
-func TestPluralRU(t *testing.T) {
-	for n, want := range map[int]string{1: "1 релиз", 2: "2 релиза", 5: "5 релизов", 11: "11 релизов", 21: "21 релиз", 112: "112 релизов", 320: "320 релизов"} {
-		if got := releasesCount("ru", n); got != want {
-			t.Errorf("releasesCount(ru, %d) = %q, want %q", n, got, want)
+func TestReleasesCount(t *testing.T) {
+	for n, want := range map[int]string{0: "0 releases", 1: "1 release", 2: "2 releases", 320: "320 releases"} {
+		if got := releasesCount(n); got != want {
+			t.Errorf("releasesCount(%d) = %q, want %q", n, got, want)
 		}
-	}
-}
-
-func TestDetectLang(t *testing.T) {
-	r := httptest.NewRequest("GET", "/", nil)
-	r.Header.Set("Accept-Language", "uk-UA,ru;q=0.8,en;q=0.5")
-	if got := detectLang(r); got != "ru" {
-		t.Errorf("Accept-Language: got %s", got)
-	}
-	r.AddCookie(&http.Cookie{Name: "lang", Value: "en"})
-	if got := detectLang(r); got != "en" {
-		t.Errorf("cookie: got %s", got)
 	}
 }
 
@@ -232,7 +218,7 @@ func TestSyncAndPages(t *testing.T) {
 
 	w = get(t, h, "/release/100/the-beatles-abbey-road", "Accept-Language", "ru")
 	body = w.Body.String()
-	for _, want := range []string{"Come Together", "Side One", "1969", "27 сентября 2019", "Remix by Giles Martin.", "https://www.discogs.com/release/10", "<html"} {
+	for _, want := range []string{"Come Together", "Side One", "1969", "September 27, 2019", "Remix by Giles Martin.", "https://www.discogs.com/release/10", "<html"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("release page lacks %q", want)
 		}
@@ -243,12 +229,10 @@ func TestSyncAndPages(t *testing.T) {
 	}
 	// Nothing personal: no date added on the card (the fake adds records in
 	// 2023–2025; the release itself is from 1969/2019).
-	for _, lang := range []string{"en", "ru"} {
-		b := get(t, h, "/release/100?part=1", "Accept-Language", lang).Body.String()
-		for _, y := range []string{"2023", "2024", "2025"} {
-			if strings.Contains(b, y) {
-				t.Errorf("%s card contains %s (date added?)", lang, y)
-			}
+	b := get(t, h, "/release/100?part=1").Body.String()
+	for _, y := range []string{"2023", "2024", "2025"} {
+		if strings.Contains(b, y) {
+			t.Errorf("card contains %s (date added?)", y)
 		}
 	}
 	if b := get(t, h, "/").Body.String(); strings.Contains(b, `"d":`) {
@@ -267,21 +251,22 @@ func TestSyncAndPages(t *testing.T) {
 	}
 }
 
-func TestLangSwitch(t *testing.T) {
+// The site is English only: no language switch, whatever the browser asks.
+func TestEnglishOnly(t *testing.T) {
 	a, _ := testApp(t)
 	h := a.routes()
-	w := get(t, h, "/lang/ru?back=/release/100")
-	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/release/100" || !strings.Contains(w.Header().Get("Set-Cookie"), "lang=ru") {
-		t.Errorf("switch: %d %v", w.Code, w.Header())
+	if w := get(t, h, "/lang/ru?back=/"); w.Code != 404 {
+		t.Errorf("/lang/ru: %d, want 404", w.Code)
 	}
-	for _, back := range []string{"//evil.example", "https://evil.example", "/\\evil"} {
-		w := get(t, h, "/lang/en?back="+back)
-		if loc := w.Header().Get("Location"); loc != "/" {
-			t.Errorf("back=%s redirected to %q", back, loc)
+	for _, path := range []string{"/", "/release/100/the-beatles-abbey-road"} {
+		w := get(t, h, path, "Accept-Language", "ru")
+		b := w.Body.String()
+		if !strings.Contains(b, `<html lang="en">`) || strings.Contains(b, "/lang/") || strings.ContainsAny(b, "абвгдеёжзийклмнопрстуфхцчшщыэюя") {
+			t.Errorf("%s is not English only", path)
 		}
-	}
-	if w := get(t, h, "/lang/de"); w.Code != 404 {
-		t.Errorf("unknown language: %d", w.Code)
+		if c := w.Header().Get("Set-Cookie"); c != "" {
+			t.Errorf("%s sets a cookie: %s", path, c)
+		}
 	}
 }
 

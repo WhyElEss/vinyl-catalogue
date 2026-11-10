@@ -71,15 +71,9 @@
     });
     return b;
   };
-  const plural = (n) => {
-    if (T.lang !== "ru") return n + " " + (n === 1 ? T.one : T.many);
-    const m10 = n % 10, m100 = n % 100;
-    if (m10 === 1 && m100 !== 11) return n + " " + T.one;
-    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return n + " " + T.few;
-    return n + " " + T.many;
-  };
+  const plural = (n) => n + " " + (n === 1 ? T.one : T.many);
   const fold = (s) => s.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").replace(/ё/g, "е");
-  const collator = new Intl.Collator(T.lang === "ru" ? "ru" : "en", { sensitivity: "base", numeric: true });
+  const collator = new Intl.Collator("en", { sensitivity: "base", numeric: true });
   data.forEach((r) => {
     r.sy = r.o || r.y || 0; // original year, else this pressing's until the master is read
     r.hay = fold([r.a, r.t, r.q, r.f, r.y, r.o].join(" "));
@@ -116,7 +110,7 @@
           if (!r.sy) add("~", T.other, 1, r);
           else {
             const d = Math.floor(r.sy / 10) * 10;
-            add(String(d), T.lang === "ru" ? d + "-е" : d + "s", 0, r);
+            add(String(d), d + "s", 0, r);
           }
           break;
         case "year":
@@ -165,12 +159,6 @@
       history.replaceState(history.state, "", url);
     }
     listURL = url;
-    // The language switch comes back to this same view.
-    document.querySelectorAll(".lang a").forEach((a) => {
-      const u = new URL(a.href, location.origin);
-      u.searchParams.set("back", url);
-      a.href = u.pathname + u.search;
-    });
   }
 
   // ---- rendering ----
@@ -828,6 +816,7 @@
     order.setAttribute("aria-pressed", String(desc));
     order.querySelector("span").textContent = desc ? T.order_desc : T.order_asc;
     order.title = desc ? T.order_desc : T.order_asc;
+    order.setAttribute("aria-label", order.title);
   };
   setOrder(state.desc);
   order.addEventListener("click", () => {

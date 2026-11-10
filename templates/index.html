@@ -3,33 +3,33 @@
   <div class="toolbar" id="toolbar" hidden>
     <label class="search">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
-      <input type="search" id="q" placeholder="{{t .Lang "search"}}" aria-label="{{t .Lang "search"}}" autocomplete="off" spellcheck="false">
+      <input type="search" id="q" placeholder="{{t "search"}}" aria-label="{{t "search"}}" autocomplete="off" spellcheck="false">
     </label>
     <label class="select">
-      <span>{{t .Lang "group_by"}}</span>
+      <span>{{t "group_by"}}</span>
       <select id="group">
-        <option value="artist">{{t .Lang "g_artist"}}</option>
-        <option value="genre">{{t .Lang "g_genre"}}</option>
-        <option value="decade">{{t .Lang "g_decade"}}</option>
-        <option value="year">{{t .Lang "g_year"}}</option>
+        <option value="artist">{{t "g_artist"}}</option>
+        <option value="genre">{{t "g_genre"}}</option>
+        <option value="decade">{{t "g_decade"}}</option>
+        <option value="year">{{t "g_year"}}</option>
       </select>
     </label>
-    <button type="button" class="pill" id="order" aria-pressed="false" title="{{t .Lang "order_asc"}}">
+    <button type="button" class="pill" id="order" aria-pressed="false" title="{{t "order_asc"}}" aria-label="{{t "order_asc"}}">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4"/></svg>
-      <span>{{t .Lang "order_asc"}}</span>
+      <span>{{t "order_asc"}}</span>
     </button>
     <div class="seg" role="group">
-      <button type="button" data-view="stacks" aria-pressed="true">{{t .Lang "view_stacks"}}</button>
-      <button type="button" data-view="wall" aria-pressed="false">{{t .Lang "view_wall"}}</button>
+      <button type="button" data-view="stacks" aria-pressed="true">{{t "view_stacks"}}</button>
+      <button type="button" data-view="wall" aria-pressed="false">{{t "view_wall"}}</button>
     </div>
-    <button type="button" class="pill" id="random">
+    <button type="button" class="pill" id="random" title="{{t "random"}}" aria-label="{{t "random"}}">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
-      {{t .Lang "random"}}
+      <span>{{t "random"}}</span>
     </button>
   </div>
 
   <section id="stage" class="stage" aria-live="polite">
-    {{if not .Releases}}<p class="empty">{{t .Lang "empty"}}</p>{{end}}
+    {{if not .Releases}}<p class="empty">{{t "empty"}}</p>{{end}}
     <div class="wall" id="fallback">
       {{range .Releases}}<a class="card" href="/release/{{.I}}">
         {{if .C}}<img src="{{.C}}" alt="" loading="lazy" decoding="async" width="300" height="300">{{else}}<span class="nocover"></span>{{end}}
@@ -39,7 +39,7 @@
   </section>
 
   <dialog id="overlay" class="overlay" aria-label="">
-    <button type="button" class="icon-btn close" id="overlay-close" aria-label="{{t .Lang "close"}}">
+    <button type="button" class="icon-btn close" id="overlay-close" aria-label="{{t "close"}}">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
     </button>
     <div id="overlay-body"></div>

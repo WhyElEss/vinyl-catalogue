@@ -1,4 +1,4 @@
-{{define "release_body"}}{{$l := .Lang}}<article class="release" data-path="{{.R.Path}}" data-title="{{.R.Artist}} – {{.R.Title}}">
+{{define "release_body"}}<article class="release" data-path="{{.R.Path}}" data-title="{{.R.Artist}} – {{.R.Title}}">
   <div class="release-cover">
     {{if .R.Cover}}<img src="{{.R.Cover}}" alt="{{.R.Artist}} – {{.R.Title}}" width="600" height="600">{{else}}<span class="nocover"></span>{{end}}
   </div>
@@ -9,24 +9,24 @@
     {{if .R.Tags}}<ul class="chips">{{range .R.Tags}}<li>{{.}}</li>{{end}}</ul>{{end}}
 
     <dl class="facts">
-      {{if .R.Labels}}<div><dt>{{t $l "label"}}</dt><dd>{{range .R.Labels}}<span class="line">{{.}}</span>{{end}}</dd></div>{{end}}
-      {{if .R.Catnos}}<div><dt>{{t $l "catno"}}</dt><dd>{{range .R.Catnos}}<span class="line">{{.}}</span>{{end}}</dd></div>{{end}}
-      {{if .R.Formats}}<div><dt>{{t $l "format"}}</dt><dd>{{range .R.Formats}}<span class="line">{{.}}</span>{{end}}</dd></div>{{end}}
-      {{if .R.OriginalYear}}<div><dt>{{t $l "original_year"}}</dt><dd>{{.R.OriginalYear}}</dd></div>{{end}}
-      {{if .R.Released}}<div><dt>{{t $l "version_year"}}</dt><dd>{{.R.Released}}</dd></div>{{else if .R.Year}}<div><dt>{{t $l "version_year"}}</dt><dd>{{.R.Year}}</dd></div>{{end}}
-      {{if .R.Country}}<div><dt>{{t $l "country"}}</dt><dd>{{.R.Country}}</dd></div>{{end}}
+      {{if .R.Labels}}<div><dt>{{t "label"}}</dt><dd>{{range .R.Labels}}<span class="line">{{.}}</span>{{end}}</dd></div>{{end}}
+      {{if .R.Catnos}}<div><dt>{{t "catno"}}</dt><dd>{{range .R.Catnos}}<span class="line">{{.}}</span>{{end}}</dd></div>{{end}}
+      {{if .R.Formats}}<div><dt>{{t "format"}}</dt><dd>{{range .R.Formats}}<span class="line">{{.}}</span>{{end}}</dd></div>{{end}}
+      {{if .R.OriginalYear}}<div><dt>{{t "original_year"}}</dt><dd>{{.R.OriginalYear}}</dd></div>{{end}}
+      {{if .R.Released}}<div><dt>{{t "version_year"}}</dt><dd>{{.R.Released}}</dd></div>{{else if .R.Year}}<div><dt>{{t "version_year"}}</dt><dd>{{.R.Year}}</dd></div>{{end}}
+      {{if .R.Country}}<div><dt>{{t "country"}}</dt><dd>{{.R.Country}}</dd></div>{{end}}
     </dl>
 
     {{if .R.Tracklist}}<section class="tracks">
-      <h2>{{t $l "tracklist"}}</h2>
+      <h2>{{t "tracklist"}}</h2>
       <ol>{{range .R.Tracklist}}{{if .Heading}}<li class="heading">{{.Title}}</li>{{else}}<li><span class="pos">{{.Position}}</span><span class="tt">{{.Title}}{{if .Artists}} <span class="muted">— {{.Artists}}</span>{{end}}</span><span class="dur">{{.Duration}}</span></li>{{range .Sub}}<li class="sub"><span class="pos">{{.Position}}</span><span class="tt">{{.Title}}</span><span class="dur">{{.Duration}}</span></li>{{end}}{{end}}{{end}}</ol>
-    </section>{{else if not .R.HasDetails}}<p class="muted">{{t $l "details_wait"}}</p>{{end}}
+    </section>{{else if not .R.HasDetails}}<p class="muted">{{t "details_wait"}}</p>{{end}}
 
     {{if .R.Notes}}<details class="notes">
-      <summary>{{t $l "notes"}}</summary>
+      <summary>{{t "notes"}}</summary>
       {{range .R.Notes}}<p>{{.}}</p>{{end}}
     </details>{{end}}
 
-    <p class="discogs-link"><a href="{{.R.DiscogsURL}}" rel="noopener" target="_blank">{{t $l "on_discogs"}} ↗</a></p>
+    <p class="discogs-link"><a href="{{.R.DiscogsURL}}" rel="noopener" target="_blank">{{t "on_discogs"}} ↗</a></p>
   </div>
 </article>{{end}}
