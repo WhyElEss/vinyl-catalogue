@@ -298,8 +298,6 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   overflow: auto; overscroll-behavior: contain;
 }
 .overlay::backdrop { background: var(--scrim); backdrop-filter: blur(4px); }
-.overlay[open] { animation: rise 0.25s cubic-bezier(.2,.7,.2,1); }
-@keyframes rise { from { opacity: 0; transform: translateY(16px) scale(0.98); } }
 .overlay .close { position: sticky; top: 12px; float: right; margin: 12px 12px 0 0; z-index: 2; }
 #overlay-body { min-height: 300px; }
 .release-page { width: min(1100px, 100%); margin: 0 auto; padding: 8px 16px 32px; flex: 1; }

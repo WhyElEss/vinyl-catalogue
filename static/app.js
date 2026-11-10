@@ -205,8 +205,13 @@
   }
 
   function cover(r, eager) {
-    if (!r.c) return el("span", "nocover");
+    if (!r.c) {
+      const none = el("span", "nocover");
+      none.dataset.i = r.i;
+      return none;
+    }
     const img = el("img");
+    img.dataset.i = r.i; // the card opens from this cover and closes into it
     img.src = r.c;
     img.alt = "";
     img.loading = eager ? "eager" : "lazy";
@@ -633,24 +638,117 @@
   }
 
   // ---- release overlay ----
+  // The card grows out of the cover that was chosen (the front record, a
+  // wall card) and shrinks back into it when closed: the card's own cover
+  // is drawn first exactly over the small one, and the rest of the card
+  // fades in around it. Without a visible cover (Random, Back/Forward) it
+  // simply rises in and sinks out.
+  const CARD_IN_MS = 340, CARD_OUT_MS = 260;
+  const cache = new Map();
   let openedHere = false;
-  async function openRelease(inst, fromHistory) {
-    dialogBody.textContent = "";
-    if (!dialog.open) dialog.showModal();
-    dialog.scrollTop = 0;
-    let html = "";
+  let openedFrom = 0; // instance whose cover the card came from
+  let closing = null;
+
+  function visibleCover(inst) {
+    for (const n of document.querySelectorAll('[data-i="' + inst + '"]')) {
+      if (n.closest(".ghost") || dialog.contains(n)) continue;
+      const r = n.getBoundingClientRect();
+      if (r.width > 8 && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth) return r;
+    }
+    return null;
+  }
+
+  // The keyframe that puts the card's cover over the rect `from`.
+  function coverFrame(from) {
+    const own = dialogBody.querySelector(".release-cover img, .release-cover .nocover");
+    if (!from || !own) return null;
+    const box = dialog.getBoundingClientRect();
+    const c = own.getBoundingClientRect();
+    if (!c.width) return null;
+    const k = from.width / c.width;
+    const x = from.left - box.left - k * (c.left - box.left);
+    const y = from.top - box.top - k * (c.top - box.top);
+    return { transformOrigin: "0 0", transform: `translate(${x}px, ${y}px) scale(${k})` };
+  }
+
+  function backdrop(keys, ms) {
     try {
-      const res = await fetch("/release/" + inst + "?part=1", { headers: { Accept: "text/html" } });
-      if (!res.ok) throw new Error(res.status);
-      html = await res.text();
+      dialog.animate(keys, { duration: ms, easing: "linear", fill: "both", pseudoElement: "::backdrop" });
+    } catch (e) {} // no ::backdrop animation here: it just appears
+  }
+
+  function animateIn(inst) {
+    dialog.getAnimations({ subtree: true }).forEach((a) => a.cancel());
+    if (reduceMotion.matches || !dialog.animate) return;
+    const from = coverFrame(visibleCover(inst));
+    if (from) {
+      // The card's cover starts over the small one; the rest fades in fast.
+      dialog.animate(
+        [{ ...from, opacity: 0.4 }, { transformOrigin: "0 0", opacity: 1, offset: 0.35 }, { transformOrigin: "0 0", transform: "none", opacity: 1 }],
+        { duration: CARD_IN_MS, easing: "cubic-bezier(.2,.7,.3,1)" }
+      );
+    } else {
+      dialog.animate([{ opacity: 0, transform: "translateY(16px) scale(0.98)" }, { opacity: 1, transform: "none" }], { duration: 250, easing: "cubic-bezier(.2,.7,.2,1)" });
+    }
+    backdrop([{ opacity: 0 }, { opacity: 1 }], CARD_IN_MS);
+  }
+
+  // closeCard plays the way back and then really closes the dialog.
+  function closeCard() {
+    if (!dialog.open || closing) return;
+    if (reduceMotion.matches || !dialog.animate) {
+      dialog.close();
+      return;
+    }
+    const to = coverFrame(visibleCover(openedFrom));
+    const keys = to
+      ? [{ transformOrigin: "0 0", transform: "none", opacity: 1 }, { transformOrigin: "0 0", opacity: 1, offset: 0.6 }, { ...to, opacity: 0 }]
+      : [{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateY(16px) scale(0.98)" }];
+    const anim = dialog.animate(keys, { duration: CARD_OUT_MS, easing: "cubic-bezier(.5,0,.75,.4)", fill: "forwards" });
+    closing = anim;
+    backdrop([{ opacity: 1 }, { opacity: 0 }], CARD_OUT_MS);
+    anim.finished.then(
+      () => {
+        if (closing !== anim) return;
+        closing = null;
+        dialog.close();
+        dialog.getAnimations({ subtree: true }).forEach((x) => x.cancel());
+      },
+      () => {} // cancelled: the card was reopened
+    );
+  }
+
+  async function loadRelease(inst) {
+    if (cache.has(inst)) return cache.get(inst);
+    const res = await fetch("/release/" + inst + "?part=1", { headers: { Accept: "text/html" } });
+    if (!res.ok) throw new Error(res.status);
+    const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+    const art = doc.querySelector("article");
+    if (!art) throw new Error("no article");
+    cache.set(inst, art);
+    return art;
+  }
+
+  async function openRelease(inst, fromHistory) {
+    let art;
+    try {
+      art = await loadRelease(inst); // the card opens once it has something to show
     } catch (e) {
       location.href = "/release/" + inst;
       return;
     }
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    const art = doc.querySelector("article");
-    if (!art) return;
+    if (closing) {
+      const c = closing;
+      closing = null; // reopened while closing: nothing closes it now
+      dialog.getAnimations({ subtree: true }).forEach((x) => x.cancel());
+      c.cancel();
+    }
     dialogBody.replaceChildren(document.importNode(art, true));
+    const wasOpen = dialog.open;
+    if (!wasOpen) dialog.showModal();
+    dialog.scrollTop = 0;
+    openedFrom = inst;
+    if (!wasOpen) animateIn(inst);
     document.title = art.dataset.title || baseTitle;
     dialog.setAttribute("aria-label", art.dataset.title || "");
     if (!fromHistory) {
@@ -659,9 +757,13 @@
     }
   }
 
-  $("#overlay-close").addEventListener("click", () => dialog.close());
+  $("#overlay-close").addEventListener("click", closeCard);
   dialog.addEventListener("click", (e) => {
-    if (e.target === dialog) dialog.close(); // a click on the backdrop
+    if (e.target === dialog) closeCard(); // a click on the backdrop
+  });
+  dialog.addEventListener("cancel", (e) => {
+    e.preventDefault(); // Esc: close with the animation
+    closeCard();
   });
   dialog.addEventListener("close", () => {
     document.title = baseTitle;
@@ -676,7 +778,7 @@
     if (rel) openRelease(rel, true);
     else if (dialog.open) {
       openedHere = false;
-      dialog.close();
+      closeCard();
     }
   });
 
