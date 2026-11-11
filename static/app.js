@@ -13,6 +13,7 @@
 // <script id="data"> and the strings into <script id="texts">.
 (() => {
   "use strict";
+  const appSrc = document.currentScript ? document.currentScript.src : "/static/app.js";
   const $ = (s, el = document) => el.querySelector(s);
   const data = JSON.parse($("#data").textContent || "[]");
   const T = JSON.parse($("#texts").textContent || "{}");
@@ -100,12 +101,17 @@
     head.append(dbg.count, copy, save, clear);
     // Test copies (DEBUG_LOG=1 on the server) also keep the log there: it is
     // sent every 2 s while it grows. Elsewhere the post gets a 404, once.
+    // A page opened with b=<digits> in its address posts under that number
+    // (debug-wheel-log-<b>.json), so other open test pages cannot overwrite
+    // its log; the address loses b on the first syncURL, so it is read now.
+    const pageNo = new URLSearchParams(location.search).get("b") || "";
+    const logNo = /^\d+$/.test(pageNo) ? "?b=" + pageNo : "";
     let sent = 0, sending = false, stop = false;
     setInterval(() => {
       if (stop || sending || dbg.log.length === sent) return;
       sending = true;
       const n = dbg.log.length;
-      fetch("/debug/wheel-log", {
+      fetch("/debug/wheel-log" + logNo, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ua: navigator.userAgent, saved: new Date().toISOString(), log: dbg.log }),
@@ -351,7 +357,6 @@
   const LID_SLOT = "M 115 50 L 185 50 A 13 13 0 0 0 185 24 L 115 24 A 13 13 0 0 0 115 50 Z";
   const fontReady = document.fonts ? document.fonts.load(LID_FONT.replace("X", "100px"), "AБ0").catch(() => {}) : Promise.resolve();
   const lidCache = new Map();
-  let lidSeq = 0;
   const lidText = (g) => (g.key === "various" ? "VARIOUS" : g.label);
 
   // lidGeometry: font size, baseline and bridges for a label, in the lid's
@@ -466,36 +471,231 @@
     return geo;
   }
 
-  // The lid is drawn once as an SVG picture with its cover and font inside
-  // (data URIs) and shown as a plain <img>: an image costs the browser no
-  // more than a cover while the row moves, whereas a live SVG with blur,
-  // masks and shadows was redrawn on the way (the row moved in jerks on the
-  // owner's Mac, 2026-11-11).
-  const dataCache = new Map();
-  function dataURI(url) {
-    if (!dataCache.has(url)) {
-      dataCache.set(url, fetch(url).then((r) => (r.ok ? r.blob() : Promise.reject(r.status))).then((b) => new Promise((ok, no) => {
-        const fr = new FileReader();
-        fr.onload = () => ok(fr.result);
-        fr.onerror = no;
-        fr.readAsDataURL(b);
-      })));
+  // The lid is drawn straight onto a canvas, and that canvas stands in the
+  // lid: a finished bitmap, which the browser only copies while the row
+  // moves (a live SVG with blur and masks was redrawn on every paint — the
+  // row jerked on the owner's Mac). Until 2026-11-11 the lid was an SVG
+  // picture turned into a JPEG; in Chromium rasterising that SVG took
+  // ~12 ms of the ~16 ms per lid (the JPEG encode itself 2–4 ms), PageSpeed
+  // counted 20 long tasks, and every new <img> became the page's LCP.
+  // A canvas is no LCP candidate, so the cover under it stays the LCP.
+  const LID_PX = 600, LU = LID_PX / 300; // canvas pixels per lid unit
+  // The plexiglass's blur (Gaussian, σ 7 units) is computed by the page,
+  // not with ctx.filter: Safari 27.2 accepts ctx.filter = "blur(…)" (it
+  // reads back) but drew the cover sharp (owner's screenshot, 2026-11-11).
+  // The cover is blurred at an eighth of the size, where σ is 1.75 px, by
+  // three box blurs in a worker (static/lidblur.js), then enlarged.
+  // Against Chromium's own Gaussian on 8 covers: mean difference 0.3–2.2 of
+  // 255, at most 21. In the owner's Safari the arithmetic took ~50 ms a lid
+  // at a quarter of the size and 14–20 ms at an eighth on the main thread
+  // (0.5–6 ms in Chromium) — hence the worker.
+  const BLUR_K = 8, BLUR_S = LID_PX / BLUR_K, BLUR_SIGMA = (7 * LU) / BLUR_K;
+  const BLUR_PAD = Math.ceil(3 * BLUR_SIGMA), BLUR_W = BLUR_S + 2 * BLUR_PAD;
+  const BLUR_BOXES = (() => {
+    const n = 3, sg = BLUR_SIGMA;
+    let wl = Math.floor(Math.sqrt((12 * sg * sg) / n + 1));
+    if (wl % 2 === 0) wl--;
+    const m = Math.round((12 * sg * sg - n * wl * wl - 4 * n * wl - 3 * n) / (-4 * wl - 4));
+    return [0, 1, 2].map((i) => (i < m ? wl : wl + 2));
+  })();
+  let blurWorker, blurSeq = 0;
+  const blurJobs = new Map();
+  function lidWorker() {
+    if (blurWorker === undefined) {
+      try {
+        blurWorker = new Worker(appSrc.replace(/app\.js/, "lidblur.js"));
+        blurWorker.onmessage = (e) => {
+          const done = blurJobs.get(e.data.id);
+          blurJobs.delete(e.data.id);
+          if (done) done(e.data.buf, e.data.ms);
+        };
+        blurWorker.onerror = () => {
+          // no blur at all rather than no lids
+          blurWorker = null;
+          blurJobs.forEach((done) => done(null));
+          blurJobs.clear();
+        };
+      } catch (e) {
+        blurWorker = null;
+      }
     }
-    return dataCache.get(url);
+    return blurWorker;
   }
-  const LID_FONTS = [
-    ["/static/fonts/jost-700-latin.woff", "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD"],
-    ["/static/fonts/jost-700-cyrillic.woff", "U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116"],
-  ];
-  let lidFontCSS = null;
-  function lidFont() {
-    if (!lidFontCSS) {
-      lidFontCSS = Promise.all(LID_FONTS.map(([url, range]) => dataURI(url).then((d) =>
-        `@font-face{font-family:JostLid;font-weight:700;src:url(${d.replace(/^data:[^;,]*/, "data:font/woff")}) format("woff");unicode-range:${range}}`
-      ))).then((x) => x.join(""));
+  // Covers decoded together (two seconds after load nearly all of them)
+  // are handed to the worker one per task: preparing each takes a few ms on
+  // the main thread, and 25 at once made an 84 ms frame in Safari.
+  const blurQueue = [];
+  function queueBlur(c) {
+    blurQueue.push(c);
+    if (blurQueue.length === 1) setTimeout(blurNext, 0);
+  }
+  function blurNext() {
+    blurCover(blurQueue.shift());
+    if (blurQueue.length) setTimeout(blurNext, 0);
+  }
+  // blurCover makes the blurred cover of c (a small canvas, c.blur) and
+  // then marks c ready; without a worker c is ready without a blur.
+  function blurCover(c) {
+    const w = lidWorker();
+    if (!w) {
+      c.st = "ready";
+      return;
     }
-    return lidFontCSS;
+    const W = BLUR_W, img = c.img;
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = W;
+    const x = cv.getContext("2d", { willReadFrequently: true });
+    x.imageSmoothingQuality = "high";
+    const iw = img.naturalWidth, ih = img.naturalHeight, s = Math.min(iw, ih);
+    x.drawImage(img, (iw - s) / 2, (ih - s) / 2, s, s, BLUR_PAD, BLUR_PAD, BLUR_S, BLUR_S);
+    const data = x.getImageData(0, 0, W, W).data;
+    const id = ++blurSeq;
+    blurJobs.set(id, (buf, ms) => {
+      if (buf) {
+        x.putImageData(new ImageData(new Uint8ClampedArray(buf), W, W), 0, 0);
+        c.blur = cv;
+        if (DEBUG) dlog(["bt", Math.round(performance.now() - dbg.t0), Math.round(ms * 10) / 10]);
+      }
+      c.st = "ready";
+    });
+    w.postMessage({ id, W, boxes: BLUR_BOXES, buf: data.buffer }, [data.buffer]);
   }
+  const scratch = [];
+  function pad(n) {
+    if (!scratch[n]) {
+      scratch[n] = document.createElement("canvas");
+      scratch[n].width = scratch[n].height = LID_PX;
+    }
+    const c = scratch[n].getContext("2d");
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.globalCompositeOperation = "source-over";
+    c.globalAlpha = 1;
+    c.clearRect(0, 0, LID_PX, LID_PX);
+    return c;
+  }
+  // The first cover of each pile, decoded once for its lid (the same URL as
+  // the cover on the rail, so the browser's cache serves it).
+  const lidCovers = new Map();
+  function lidCover(g) {
+    const url = g.items[0] && g.items[0].c;
+    if (!url) return { st: "ready", img: null, blur: null };
+    let c = lidCovers.get(url);
+    if (!c) {
+      const img = new Image();
+      img.decoding = "async";
+      img.src = url;
+      c = { st: "loading", img, blur: null };
+      img.decode().then(() => queueBlur(c), () => {
+        c.st = "ready"; // a lid without its cover rather than none
+        c.img = null;
+      });
+      lidCovers.set(url, c);
+    }
+    return c;
+  }
+  // The cover, cut to a square around its middle (SVG "xMidYMid slice").
+  function drawSlice(c, img) {
+    const w = img.naturalWidth, h = img.naturalHeight, s = Math.min(w, h);
+    c.drawImage(img, (w - s) / 2, (h - s) / 2, s, s, 0, 0, LID_PX, LID_PX);
+  }
+  function setLabel(c, size) {
+    c.font = LID_FONT.replace("X", size + "px");
+    c.textAlign = "center";
+  }
+
+  // drawLid paints the lid of stack g over its cover (lidCover: the image
+  // and its blurred copy, either may be missing).
+  // All lengths are in lid units (300 across), as the design was drawn.
+  function drawLid(g, cover) {
+    const img = cover.img;
+    const label = lidText(g);
+    const { size, y, bridges } = lidGeometry(label);
+    const slot = new Path2D(LID_SLOT);
+    // The cut: the label and the finger slot, minus the bridges.
+    const k = pad(0);
+    k.scale(LU, LU);
+    setLabel(k, size);
+    k.fillText(label, 150, y);
+    k.fill(slot);
+    k.globalCompositeOperation = "destination-out";
+    for (const b of bridges) k.fillRect(b.x, b.y, b.w, b.h);
+    const cut = scratch[0];
+
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = LID_PX;
+    cv.setAttribute("aria-hidden", "true");
+    const c = cv.getContext("2d");
+    c.fillStyle = "#2a2b2e";
+    c.fillRect(0, 0, LID_PX, LID_PX);
+    if (img) drawSlice(c, img); // sharp, seen through the cut
+
+    // Smoked plexiglass everywhere but the cut: the cover blurred
+    // (Gaussian, 7 units), darkened.
+    const f = pad(1);
+    if (cover.blur) {
+      f.imageSmoothingQuality = "high";
+      f.drawImage(cover.blur, BLUR_PAD, BLUR_PAD, BLUR_S, BLUR_S, 0, 0, LID_PX, LID_PX);
+    } else if (img) drawSlice(f, img); // no worker: clear plexiglass
+    f.fillStyle = "rgba(30,32,36,.5)";
+    f.fillRect(0, 0, LID_PX, LID_PX);
+    f.globalCompositeOperation = "destination-out";
+    f.drawImage(cut, 0, 0);
+    c.drawImage(scratch[1], 0, 0);
+
+    // The plexiglass's thickness, inside the cut: the plexiglass (which
+    // goes on above the lid's top edge) moved down 1…10 units, .0875 each.
+    const p = pad(2);
+    p.fillRect(0, 0, LID_PX, LID_PX);
+    p.globalCompositeOperation = "destination-out";
+    p.drawImage(cut, 0, 0);
+    const s = pad(3);
+    s.globalAlpha = 0.0875;
+    for (let d = 1; d <= 10; d++) {
+      s.drawImage(scratch[2], 0, d * LU);
+      s.fillRect(0, 0, LID_PX, d * LU);
+    }
+    s.globalAlpha = 1;
+    s.globalCompositeOperation = "destination-in";
+    s.drawImage(cut, 0, 0);
+    c.drawImage(scratch[3], 0, 0);
+
+    // The polished edge: a band 0.8 units wide just inside the cut's
+    // outline — the cut minus the cut shrunk by 0.8 units (as the SVG's
+    // erode did). Shrunk = the cut kept only where it also covers itself
+    // moved 0.8 units each way. Not a stroke of the letters: a glyph may
+    // be drawn from overlapping outlines (Jost's A), whose inner lines a
+    // stroke would show.
+    const e = pad(2), o = 0.8 * LU;
+    e.drawImage(cut, 0, 0);
+    e.globalCompositeOperation = "destination-in";
+    for (const [dx, dy] of [[o, 0], [-o, 0], [0, o], [0, -o], [o, o], [o, -o], [-o, o], [-o, -o]]) e.drawImage(cut, dx, dy);
+    const r = pad(3);
+    r.drawImage(cut, 0, 0);
+    r.globalCompositeOperation = "destination-out";
+    r.drawImage(scratch[2], 0, 0);
+    r.globalCompositeOperation = "source-in";
+    r.fillStyle = "#fff";
+    r.fillRect(0, 0, LID_PX, LID_PX);
+    c.globalAlpha = 0.95;
+    c.drawImage(scratch[3], 0, 0);
+    c.globalAlpha = 1;
+
+    // A gloss from the top left, and the lid's edge.
+    const gl = c.createLinearGradient(0, 0, LID_PX, LID_PX);
+    gl.addColorStop(0, "rgba(255,255,255,.28)");
+    gl.addColorStop(0.45, "rgba(255,255,255,0)");
+    gl.addColorStop(1, "rgba(255,255,255,.08)");
+    c.fillStyle = gl;
+    c.fillRect(0, 0, LID_PX, LID_PX);
+    c.scale(LU, LU);
+    c.beginPath();
+    c.roundRect(0.75, 0.75, 298.5, 298.5, 3);
+    c.lineWidth = 1.5;
+    c.strokeStyle = "rgba(255,255,255,.55)";
+    c.stroke();
+    return cv;
+  }
+
   // Lid work happens one piece at a time and never while the row moves:
   // first the lids of the piles near the middle, then, in spare moments,
   // the bridges of every other label of this grouping.
@@ -516,10 +716,11 @@
   // Lids are made ahead of the middle so a pile never arrives as a black
   // square (owner, 2026-11-11, with keys held the row hardly stops): while
   // the row stands still, every unmade lid, nearest first; while it
-  // moves, only one that is about to be seen, at most every 150 ms (about
-  // 20 ms of work in Safari — one late frame instead of a black square).
+  // moves, only one that is about to be seen, at most every 150 ms.
   // Until the page has loaded and rested, only the piles within NEAR, so
-  // the first visit fetches no more covers than before.
+  // the first visit fetches no more covers than before. A lid is drawn
+  // only once its cover has arrived; the covers of the lids still to make
+  // are fetched meanwhile.
   let lidWide = false, lidLast = 0;
   window.addEventListener("load", () => setTimeout(() => {
     lidWide = true;
@@ -527,15 +728,17 @@
   }, 2000));
   function lidStep() {
     const reach = lidWide ? slots.length : NEAR;
-    let best = -1;
+    let best = -1, loading = 0;
     if (center >= 0) {
       for (let d = 0; d <= reach && best < 0; d++) {
-        for (const i of [center - d, center + d]) {
+        for (const i of d ? [center - d, center + d] : [center]) {
           const lid = slots[i] && slots[i].firstChild.querySelector(".lid");
-          if (lid && !lid.dataset.built && !lid.hidden) {
+          if (!lid || lid.dataset.built || lid.hidden) continue;
+          if (lidCover(gs[i]).st === "ready") {
             best = i;
             break;
           }
+          loading++;
         }
       }
     }
@@ -552,7 +755,7 @@
       setTimeout(lidStep, moving ? 50 : 16);
       return;
     }
-    if (railMoving()) {
+    if (loading || railMoving()) {
       setTimeout(lidStep, 50);
       return;
     }
@@ -567,94 +770,13 @@
   }
 
   function makeLid(i) {
-    const s = slots[i];
-    const lid = s && s.firstChild.querySelector(".lid");
+    const lid = slots[i] && slots[i].firstChild.querySelector(".lid");
     if (!lid || lid.dataset.built) return;
     lid.dataset.built = "1";
-    const g = gs[i], first = g.items[0];
-    const tb = performance.now();
-    Promise.all([fontReady, lidFont(), first && first.c ? dataURI(first.c) : ""]).then(([, css, cover]) => {
-      if (!lid.isConnected) return;
-      const t1 = performance.now();
-      const img = new Image();
-      img.alt = "";
-      img.decoding = "async";
-      img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(lidSVG(g, cover, css));
-      const t2 = performance.now();
-      const put = () => {
-        lid.replaceChildren(img);
-        rasterQueue.push({ img, key: g.key });
-        rasterPump();
-        if (DEBUG) dlog(["lb", Math.round(tb - dbg.t0), g.key, Math.round(t1 - tb), Math.round(t2 - t1), Math.round(performance.now() - t2)], "lid " + g.key + ": data " + Math.round(t1 - tb) + ", svg " + Math.round(t2 - t1) + ", decode " + Math.round(performance.now() - t2) + " ms");
-      };
-      if (img.decode) img.decode().then(put, put);
-      else put();
-    }).catch(() => delete lid.dataset.built);
-  }
-
-  // The SVG lid is shown at once, then replaced by a JPEG of itself: WebKit
-  // re-runs the SVG's blur and masks whenever it paints, a bitmap is only
-  // copied (owner's Safari, 2026-11-11: fewer late frames than SVG). JPEG,
-  // not PNG — the lid has no transparency, and it encoded in 23 ms instead
-  // of 37 and took 66 KB instead of 521. Encoding blocks the main thread,
-  // so it waits until the row stands still, one lid per turn.
-  const rasterQueue = [];
-  let rasterTimer = 0;
-  function rasterPump() {
-    if (rasterTimer || !rasterQueue.length) return;
-    const wait = railMoving() ? railMove.until - performance.now() + 120 : 60;
-    rasterTimer = setTimeout(() => {
-      rasterTimer = 0;
-      if (railMoving()) return rasterPump();
-      const { img, key } = rasterQueue.shift();
-      if (img.isConnected) {
-        try {
-          const t3 = performance.now();
-          const cv = document.createElement("canvas");
-          cv.width = cv.height = 600;
-          cv.getContext("2d").drawImage(img, 0, 0, 600, 600);
-          const url = cv.toDataURL("image/jpeg", 0.9);
-          img.src = url;
-          dlog(["xp", Math.round(t3 - dbg.t0), key, "jpg", Math.round(performance.now() - t3), url.length]);
-        } catch (e) {
-          dlog(["xp", Math.round(performance.now() - dbg.t0), key, "jpg failed: " + e.name], "jpg failed: " + e.name);
-        }
-      }
-      rasterPump();
-    }, Math.max(0, wait));
-  }
-
-  // lidSVG draws the lid for stack g over its cover (a data URI).
-  function lidSVG(g, href, css) {
-    const label = lidText(g);
-    const { size, y, bridges } = lidGeometry(label);
-    const u = ++lidSeq;
-    const img = (extra) => (href ? `<image href="${href}" width="300" height="300" preserveAspectRatio="xMidYMid slice" ${extra}/>` : "");
-    const esc = label.replace(/&/g, "&amp;").replace(/</g, "&lt;");
-    const text = (fill) => `<text x="150" y="${y.toFixed(1)}" text-anchor="middle" font-family="JostLid, sans-serif" font-weight="700" font-size="${size.toFixed(1)}" fill="${fill}">${esc}</text>`;
-    const cut = (fill) => `<g mask="url(#lnb${u})">${text(fill)}<path d="${LID_SLOT}" fill="${fill}"/></g>`;
-    const bridgeRects = bridges.map((r) => `<rect x="${r.x.toFixed(2)}" y="${r.y.toFixed(2)}" width="${r.w.toFixed(2)}" height="${r.h.toFixed(2)}" fill="black"/>`).join("");
-    let shadow = "";
-    for (let k = 1; k <= 10; k++) shadow += `<g transform="translate(0 ${k})"><rect x="-20" y="-20" width="340" height="340" fill="rgba(0,0,0,.0875)" mask="url(#lsh${u})"/></g>`;
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="600" height="600">
-      <defs>
-        <style>${css}</style>
-        <mask id="lnb${u}" maskUnits="userSpaceOnUse" x="-20" y="-20" width="340" height="340"><rect x="-20" y="-20" width="340" height="340" fill="white"/>${bridgeRects}</mask>
-        <mask id="lfr${u}" maskUnits="userSpaceOnUse" x="0" y="0" width="300" height="300"><rect width="300" height="300" fill="white"/>${cut("black")}</mask>
-        <mask id="lin${u}" maskUnits="userSpaceOnUse" x="0" y="0" width="300" height="300"><rect width="300" height="300" fill="black"/>${cut("white")}</mask>
-        <mask id="lsh${u}" maskUnits="userSpaceOnUse" x="-20" y="-20" width="340" height="340"><rect x="-20" y="-20" width="340" height="340" fill="white"/>${cut("black")}</mask>
-        <filter id="lbl${u}" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="7"/></filter>
-        <filter id="lrm${u}" x="-5%" y="-5%" width="110%" height="110%"><feMorphology in="SourceAlpha" operator="erode" radius="0.8" result="e"/><feComposite in="SourceAlpha" in2="e" operator="out" result="r"/><feFlood flood-color="#fff" flood-opacity=".95"/><feComposite in2="r" operator="in"/></filter>
-        <linearGradient id="lgl${u}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="rgba(255,255,255,.28)"/><stop offset=".45" stop-color="rgba(255,255,255,0)"/><stop offset="1" stop-color="rgba(255,255,255,.08)"/></linearGradient>
-      </defs>
-      <rect width="300" height="300" fill="#2a2b2e"/>
-      ${img("")}
-      <g mask="url(#lfr${u})">${img(`filter="url(#lbl${u})"`)}<rect width="300" height="300" fill="rgba(30,32,36,.5)"/></g>
-      <g mask="url(#lin${u})">${shadow}</g>
-      <g filter="url(#lrm${u})">${cut("white")}</g>
-      <rect width="300" height="300" fill="url(#lgl${u})"/>
-      <rect x=".75" y=".75" width="298.5" height="298.5" rx="3" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.5"/>
-    </svg>`;
+    const g = gs[i];
+    const t = performance.now();
+    lid.replaceChildren(drawLid(g, lidCover(g)));
+    if (DEBUG) dlog(["lb", Math.round(t - dbg.t0), g.key, Math.round((performance.now() - t) * 10) / 10], "lid " + g.key + ": " + Math.round(performance.now() - t) + " ms");
   }
 
   // paintLid puts the lid on pile i (closed) or takes it off (open). With
