@@ -30,12 +30,12 @@
 
   <section id="stage" class="stage" aria-live="polite">
     {{if not .Releases}}<p class="empty">{{t "empty"}}</p>{{end}}
-    <div class="wall" id="fallback">
+    <noscript><div class="wall" id="fallback">
       {{range .Releases}}<a class="card" href="/release/{{.I}}">
         {{if .C}}<img src="{{.C}}" alt="" loading="lazy" decoding="async" width="300" height="300">{{else}}<span class="nocover"></span>{{end}}
         <span class="card-a">{{.A}}</span><span class="card-t">{{.T}}</span>
       </a>{{end}}
-    </div>
+    </div></noscript>
   </section>
 
   <dialog id="overlay" class="overlay" aria-label="">

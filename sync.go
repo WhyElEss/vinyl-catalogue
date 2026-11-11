@@ -22,6 +22,7 @@ import (
 //   - when SyncEvery has passed since the last full sync: the list and every
 //     release again, so edited tracklists and newly uploaded covers arrive.
 func (a *App) syncLoop(ctx context.Context) {
+	a.optimizeStoredCovers() // once, before any download can touch the files
 	var last time.Time
 	a.store.view(func(d *Data) { last = d.FullSyncAt })
 	full := time.Since(last) >= a.cfg.SyncEvery
@@ -276,6 +277,7 @@ func (a *App) downloadCover(ctx context.Context, src, dst string) error {
 	if len(b) < 3 || b[0] != 0xFF || b[1] != 0xD8 {
 		return errors.New("not a JPEG")
 	}
+	b = optimizeCover(b)
 	tmp := dst + ".tmp"
 	if err := os.WriteFile(tmp, b, 0o644); err != nil {
 		return err

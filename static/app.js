@@ -305,7 +305,26 @@
     state.at = null;
   }
 
-  function cover(r, eager) {
+  // how: true = load now; "defer" = no source yet (a pile far from the
+  // middle; showNear() gives it one when the middle comes close); otherwise
+  // the browser's own lazy loading (the wall).
+  // Only the covers of the piles within NEAR of the middle are fetched: the
+  // rail is far wider than the screen, and the browser's lazy loading counts
+  // thousands of pixels sideways as "near" (PageSpeed: 29 piles' covers
+  // fetched with 3 on screen).
+  const NEAR = 3;
+  function showNear() {
+    for (let i = Math.max(0, center - NEAR); i <= Math.min(slots.length - 1, center + NEAR); i++) {
+      const img = slots[i].querySelector("img");
+      if (!img) continue;
+      img.loading = "eager";
+      if (img.dataset.src) {
+        img.src = img.dataset.src;
+        delete img.dataset.src;
+      }
+    }
+  }
+  function cover(r, how) {
     if (!r.c) {
       const none = el("span", "nocover");
       none.dataset.i = r.i;
@@ -313,9 +332,10 @@
     }
     const img = el("img");
     img.dataset.i = r.i; // the card opens from this cover and closes into it
-    img.src = r.c;
+    if (how === "defer") img.dataset.src = r.c;
+    else img.src = r.c;
     img.alt = "";
-    img.loading = eager ? "eager" : "lazy";
+    img.loading = how === true ? "eager" : "lazy";
     img.decoding = "async";
     img.width = img.height = 600;
     return img;
@@ -387,7 +407,7 @@
     pile.style.setProperty("--h", edges(n - idx - 1));
     pile.style.setProperty("--taper", (Math.min(n - idx - 1, 40) / 40).toFixed(3));
     const front = pile.querySelector(".rec");
-    front.replaceChildren(cover(r, Math.abs(i - center) <= 3));
+    front.replaceChildren(cover(r, Math.abs(i - center) <= NEAR || "defer"));
     paintFallen(pile, g, g.key === state.open ? idx : 0);
     const label = s.lastChild;
     label.textContent = "";
@@ -641,11 +661,7 @@
       if (was >= 0) paintSlot(was, 0);
       paintSlot(center, 0);
     }
-    // Covers near the middle load first.
-    for (let i = Math.max(0, center - 3); i <= Math.min(slots.length - 1, center + 3); i++) {
-      const img = slots[i].querySelector("img");
-      if (img) img.loading = "eager";
-    }
+    showNear();
     prevBtn.disabled = center === 0;
     nextBtn.disabled = center === slots.length - 1;
     [...strip.children].forEach((b, i) => b.setAttribute("aria-current", i === center ? "true" : "false"));

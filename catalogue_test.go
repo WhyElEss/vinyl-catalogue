@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -478,5 +479,60 @@ func TestOrderCompilationsAndSortAs(t *testing.T) {
 	}
 	if !d.Releases[0].compilation() || d.Releases[2].compilation() {
 		t.Errorf("compilation flags wrong")
+	}
+}
+
+// Covers larger than coverMax shrink to it; a cover already small is
+// re-encoded only when that makes it smaller; non-JPEG bytes stay as they are.
+func TestOptimizeCover(t *testing.T) {
+	noisy := func(w, h int) []byte {
+		img := image.NewRGBA(image.Rect(0, 0, w, h))
+		seed := uint32(1)
+		for i := range img.Pix {
+			seed = seed*1664525 + 1013904223
+			img.Pix[i] = uint8(seed >> 24)
+		}
+		var buf bytes.Buffer
+		jpeg.Encode(&buf, img, &jpeg.Options{Quality: 100})
+		return buf.Bytes()
+	}
+	big := noisy(1200, 800)
+	out := optimizeCover(big)
+	cfg, err := jpeg.DecodeConfig(bytes.NewReader(out))
+	if err != nil || cfg.Width != 600 || cfg.Height != 400 {
+		t.Errorf("big cover: %dx%d %v, want 600x400", cfg.Width, cfg.Height, err)
+	}
+	small := noisy(300, 300)
+	if out := optimizeCover(small); len(out) >= len(small) {
+		t.Errorf("small cover not smaller: %d >= %d", len(out), len(small))
+	}
+	junk := []byte{0xFF, 0xD8, 0xFF, 0xE0, 'x'}
+	if out := optimizeCover(junk); !bytes.Equal(out, junk) {
+		t.Errorf("undecodable bytes changed")
+	}
+}
+
+// Open to search engines: robots.txt allows all and names the sitemap, the
+// sitemap lists every record, pages carry no noindex.
+func TestSearchEngines(t *testing.T) {
+	a, _ := testApp(t)
+	h := a.routes()
+	w := get(t, h, "/robots.txt")
+	if b := w.Body.String(); !strings.Contains(b, "User-agent: *\nAllow: /") || !strings.Contains(b, "Sitemap: http://example.com/sitemap.xml") || strings.Contains(b, "Disallow") {
+		t.Errorf("robots.txt:\n%s", b)
+	}
+	w = get(t, h, "/sitemap.xml")
+	if b := w.Body.String(); w.Code != 200 || !strings.Contains(b, "<loc>http://example.com/release/100/the-beatles-abbey-road</loc>") || strings.Count(b, "<loc>") != 4 {
+		t.Errorf("sitemap %d:\n%s", w.Code, b)
+	}
+	w = get(t, h, "/")
+	if w.Header().Get("X-Robots-Tag") != "" || strings.Contains(w.Body.String(), "noindex") {
+		t.Errorf("the page still asks not to be indexed")
+	}
+	if w.Header().Get("Strict-Transport-Security") != "max-age=31536000" || w.Header().Get("Cross-Origin-Opener-Policy") != "same-origin" {
+		t.Errorf("security headers: %v", w.Header())
+	}
+	if strings.Contains(w.Body.String(), "<noscript><div class=\"wall\" id=\"fallback\">") == false {
+		t.Errorf("the no-script list is not inside <noscript>")
 	}
 }

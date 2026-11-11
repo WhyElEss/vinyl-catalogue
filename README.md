@@ -33,7 +33,8 @@ The site is in English only, with a day and a night theme.
 - **Nothing personal.** The site keeps and shows only what Discogs says about the releases: no date added, no rating, no condition, no notes, no profile.
 - **Themes.** The theme follows the system until the visitor picks one with the button in the header (system → day → night); the choice is kept in the browser.
 - **Link previews**: the collection page shares a 1200×630 card (`static/og.png`: "My record collection — Dig through the crates", the domain, a record sliding out of its sleeve) with the owner's name and the number of releases in the text; a record's page shares its own cover, title, original year and format. Full Open Graph and Twitter tags, plus `favicon.ico`, `favicon-32.png`, `icon.svg` and a 180×180 `apple-touch-icon.png` for Safari Favorites and the iOS home screen.
-- `noindex` for search engines; link-preview crawlers (Twitter, Facebook, Telegram, Slack, Discord, WhatsApp, LinkedIn, Bluesky's Cardyb) may read the pages.
+- **Light first load.** Only the covers of the piles within three steps of the middle are fetched (one more pile's covers as the row moves); the plain list of all records for browsers without JavaScript sits in `<noscript>`, so other browsers never fetch its covers. Covers are kept at most 600 px on a side (Discogs' API serves no more) and re-encoded as JPEG quality 75 with Go's own encoder, keeping the original when that is not smaller: the 319 covers went from 34.6 MB to 16.9 MB. Covers downloaded before this are re-encoded once at start (marker file `covers/.optimized-1`); a cover's URL includes its file size, so browsers fetch the new file.
+- Open to search engines: `robots.txt` allows everything and points to `/sitemap.xml`, which lists the collection page and every record's own page; link-preview crawlers read the pages too.
 
 ## How the collection is read
 

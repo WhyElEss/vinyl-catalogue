@@ -60,10 +60,13 @@ func (a *App) routes() http.Handler {
 			http.ServeFileFS(w, r, static, name)
 		})))
 	}
+	// Search engines and link-preview crawlers are welcome (owner,
+	// 2026-11-11); the sitemap lists every record's page.
 	mux.HandleFunc("GET /robots.txt", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.Write([]byte(robotsTxt))
+		fmt.Fprintf(w, "User-agent: *\nAllow: /\n\nSitemap: %s/sitemap.xml\n", a.origin(r))
 	})
+	mux.HandleFunc("GET /sitemap.xml", a.handleSitemap)
 	a.debugRoutes(mux)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok\n")) })
 	mux.HandleFunc("GET /cover/{file}", a.handleCover)
@@ -72,22 +75,6 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /release/{instance}/{slug}", a.handleRelease)
 	return a.secure(mux)
 }
-
-// robotsTxt keeps search engines out but lets link-preview crawlers read the
-// pages, so shared links get a card.
-const robotsTxt = `User-agent: Twitterbot
-User-agent: facebookexternalhit
-User-agent: TelegramBot
-User-agent: Slackbot
-User-agent: Discordbot
-User-agent: WhatsApp
-User-agent: LinkedInBot
-User-agent: Cardyb
-Allow: /
-
-User-agent: *
-Disallow: /
-`
 
 func cacheFor(d time.Duration, h http.Handler) http.Handler {
 	maxAge := strconv.Itoa(int(d.Seconds()))
@@ -102,7 +89,10 @@ func cacheFor(d time.Duration, h http.Handler) http.Handler {
 func (a *App) secure(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hd := w.Header()
-		hd.Set("X-Robots-Tag", "noindex, nofollow")
+		// HTTPS only from now on for this host (not its siblings), and no
+		// window opened from elsewhere shares a browsing context with ours.
+		hd.Set("Strict-Transport-Security", "max-age=31536000")
+		hd.Set("Cross-Origin-Opener-Policy", "same-origin")
 		hd.Set("X-Content-Type-Options", "nosniff")
 		hd.Set("X-Frame-Options", "DENY")
 		hd.Set("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -248,7 +238,8 @@ func (a *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 // coverURL is the site's own URL for a release's cover, "" without one. The
-// query changes when the image is replaced, so browsers may cache for long.
+// query changes when the image is replaced or re-encoded (it hashes the
+// source URL and the file size), so browsers may cache for long.
 func (a *App) coverURL(d *Data, r *Release) string {
 	// The file's own source, which may lag behind coverSource until the
 	// download is done.
@@ -256,7 +247,11 @@ func (a *App) coverURL(d *Data, r *Release) string {
 	if err != nil {
 		return ""
 	}
-	return "/cover/" + strconv.FormatInt(r.ID, 10) + ".jpg?v=" + shortHash(string(src))
+	size := ""
+	if st, err := os.Stat(a.coverPath(r.ID)); err == nil {
+		size = strconv.FormatInt(st.Size(), 10)
+	}
+	return "/cover/" + strconv.FormatInt(r.ID, 10) + ".jpg?v=" + shortHash(string(src)+"|"+size)
 }
 
 func shortHash(s string) string {

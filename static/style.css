@@ -119,7 +119,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 }
 .search svg { color: var(--muted); }
 .search input { flex: 1; min-width: 0; border: 0; background: transparent; outline: none; height: 100%; }
-.select { display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 6px 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-size: 14px; }
+.select { position: relative; display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 6px 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-size: 14px; }
 .select span { color: var(--muted); }
 .select select { border: 0; background: transparent; height: 100%; padding-right: 6px; cursor: pointer; outline: none; font-weight: 600; }
 .select select option { background: var(--surface); color: var(--text); }
@@ -331,7 +331,9 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 @media (max-width: 760px) {
   .toolbar { gap: 8px; }
   .search { flex-basis: 100%; max-width: none; }
-  .select span { display: none; }
+  /* Hidden from sight only: the label still names the select for screen
+     readers (PageSpeed flagged display:none here). */
+  .select span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   /* Phones: order and random are icons only, so the controls take one row
      under the search, and the stack, its label and its buttons fit above
      a browser bar floating over the bottom of the page (Safari on iOS). */
