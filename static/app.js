@@ -123,6 +123,15 @@
     document.body.appendChild(panel);
     dbg.panel = panel;
     dlog(["c", 0], "debug on — wheel: gap ms, dx, dy");
+    // Every frame that came more than 25 ms after the previous one (a
+    // dropped frame), whatever caused it.
+    let last = performance.now();
+    const beat = (t) => {
+      if (t - last > 25) dlog(["j", Math.round(t - dbg.t0), Math.round(t - last)]);
+      last = t;
+      requestAnimationFrame(beat);
+    };
+    requestAnimationFrame(beat);
   }
   const dialogBody = $("#overlay-body");
   if (!data.length) return;
@@ -315,12 +324,367 @@
   const NEAR = 3;
   function showNear() {
     for (let i = Math.max(0, center - NEAR); i <= Math.min(slots.length - 1, center + NEAR); i++) {
-      const img = slots[i].querySelector("img");
-      if (!img) continue;
-      img.loading = "eager";
-      if (img.dataset.src) {
-        img.src = img.dataset.src;
-        delete img.dataset.src;
+      const img = slots[i].querySelector(".rec img");
+      if (img) {
+        img.loading = "eager";
+        if (img.dataset.src) {
+          img.src = img.dataset.src;
+          delete img.dataset.src;
+        }
+      }
+      buildLid(i);
+    }
+    lidPump(); // and the lids further ahead, in spare moments
+  }
+
+  // ---- the crate lid ----
+  // A closed stack wears a front lid of smoked plexiglass over its first
+  // cover (owner's design, 2026-11-11): the stack's label (letter, decade,
+  // year, VARIOUS) and a finger slot are cut through it, so the cover shows
+  // sharp inside them; the cut has a polished edge and, inside, the shadow
+  // of the plexiglass's thickness. Entering the stack drops the lid forward.
+  // The label is set in Jost 700; as no stencil face with Cyrillic exists
+  // under a free licence (checked 2026-11-11), bridges are added where a
+  // piece of plexiglass would otherwise fall out (inside O, A, B, R, Ю, Ф,
+  // 8, # …), found by rasterising the cut.
+  const LID_FONT = '700 X "Jost"';
+  const LID_SLOT = "M 115 50 L 185 50 A 13 13 0 0 0 185 24 L 115 24 A 13 13 0 0 0 115 50 Z";
+  const fontReady = document.fonts ? document.fonts.load(LID_FONT.replace("X", "100px"), "AБ0").catch(() => {}) : Promise.resolve();
+  const lidCache = new Map();
+  let lidSeq = 0;
+  const lidText = (g) => (g.key === "various" ? "VARIOUS" : g.label);
+
+  // lidGeometry: font size, baseline and bridges for a label, in the lid's
+  // 300 × 300 units. A label of one character is set large; longer ones are
+  // fitted into 82% of the lid's width.
+  // Measured in Safari 27.2 (owner's Mac, 2026-11-11): at 2× this took
+  // 91–130 ms per label on the main thread, and every long frame of the row
+  // coincided with one; so it runs at 1× (a quarter of the pixels), only
+  // while the row stands still (lidPump), and is remembered in the browser.
+  const GEO_KEY = "lidgeo1:";
+  function lidGeometry(label) {
+    if (lidCache.has(label)) return lidCache.get(label);
+    try {
+      const saved = localStorage.getItem(GEO_KEY + label);
+      if (saved) {
+        const geo = JSON.parse(saved);
+        lidCache.set(label, geo);
+        return geo;
+      }
+    } catch (e) {}
+    const tg = performance.now();
+    const S = 1, W = 300 * S;
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = W;
+    const c = cv.getContext("2d");
+    // Every label is set at one size (single letters 190, longer labels
+    // fitted into 82% of the lid's width) and centred by its real outline
+    // under the finger slot, so a J or Q with a tail sits at the same height
+    // as the others instead of on the baseline.
+    const ink = (sz) => {
+      c.font = LID_FONT.replace("X", sz + "px");
+      const m = c.measureText(label);
+      return { w: m.actualBoundingBoxLeft + m.actualBoundingBoxRight, a: m.actualBoundingBoxAscent, d: m.actualBoundingBoxDescent };
+    };
+    let size = [...label].length === 1 ? 190 : 120;
+    let m = ink(size);
+    if (m.w > 246) size *= 246 / m.w;
+    m = ink(size);
+    const y = 180 - (m.d - m.a) / 2;
+    c.fillStyle = "#000";
+    c.fillRect(0, 0, W, W);
+    c.fillStyle = "#fff";
+    c.font = LID_FONT.replace("X", size * S + "px");
+    c.textAlign = "center";
+    c.fillText(label, 150 * S, y * S);
+    const px = c.getImageData(0, 0, W, W).data;
+    const cut = new Uint8Array(W * W);
+    for (let i = 0; i < W * W; i++) cut[i] = px[i * 4] > 127 ? 1 : 0;
+    // The plexiglass reachable from the lid's border stays on; whatever is
+    // not reached is an island and needs a bridge.
+    const outside = new Uint8Array(W * W);
+    const st = [];
+    for (let x = 0; x < W; x++) st.push(x, (W - 1) * W + x);
+    for (let yy = 0; yy < W; yy++) st.push(yy * W, yy * W + W - 1);
+    while (st.length) {
+      const i = st.pop();
+      if (outside[i] || cut[i]) continue;
+      outside[i] = 1;
+      const x = i % W;
+      if (x > 0) st.push(i - 1);
+      if (x < W - 1) st.push(i + 1);
+      if (i >= W) st.push(i - W);
+      if (i < W * (W - 1)) st.push(i + W);
+    }
+    const bridges = [];
+    const bw = Math.max(3, size * 0.035);
+    const done = new Uint8Array(W * W);
+    for (let i = 0; i < W * W; i++) {
+      if (cut[i] || outside[i] || done[i]) continue;
+      const pix = [];
+      const s2 = [i];
+      while (s2.length) {
+        const j = s2.pop();
+        if (cut[j] || outside[j] || done[j]) continue;
+        done[j] = 1;
+        pix.push(j);
+        const x = j % W;
+        if (x > 0) s2.push(j - 1);
+        if (x < W - 1) s2.push(j + 1);
+        if (j >= W) s2.push(j - W);
+        if (j < W * (W - 1)) s2.push(j + W);
+      }
+      if (pix.length < 6) continue; // a speck, not a piece
+      let minX = W, maxX = 0;
+      for (const j of pix) {
+        const x = j % W;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+      }
+      const cx = Math.round((minX + maxX) / 2);
+      const col = pix.filter((j) => j % W === cx).map((j) => (j / W) | 0);
+      if (!col.length) continue;
+      const top = Math.min(...col), bot = Math.max(...col);
+      let a = top - 1;
+      while (a > 0 && cut[a * W + cx]) a--;
+      let b = bot + 1;
+      while (b < W - 1 && cut[b * W + cx]) b++;
+      const up = { x: cx / S - bw / 2, y: a / S, w: bw, h: (top - a) / S + 0.5 };
+      const down = { x: cx / S - bw / 2, y: bot / S - 0.5, w: bw, h: (b - bot) / S + 0.5 };
+      // Two bridges, like a stencil's O — but where one would run much
+      // longer than the other (the apex of A), only the short one.
+      if (up.h > down.h * 1.4) bridges.push(down);
+      else if (down.h > up.h * 1.4) bridges.push(up);
+      else bridges.push(up, down);
+    }
+    const geo = { size, y, bridges };
+    lidCache.set(label, geo);
+    try {
+      localStorage.setItem(GEO_KEY + label, JSON.stringify(geo));
+    } catch (e) {}
+    if (DEBUG) dlog(["lg", Math.round(tg - dbg.t0), label, Math.round(performance.now() - tg)], "lid geometry " + label + ": " + Math.round(performance.now() - tg) + " ms");
+    return geo;
+  }
+
+  // The lid is drawn once as an SVG picture with its cover and font inside
+  // (data URIs) and shown as a plain <img>: an image costs the browser no
+  // more than a cover while the row moves, whereas a live SVG with blur,
+  // masks and shadows was redrawn on the way (the row moved in jerks on the
+  // owner's Mac, 2026-11-11).
+  const dataCache = new Map();
+  function dataURI(url) {
+    if (!dataCache.has(url)) {
+      dataCache.set(url, fetch(url).then((r) => (r.ok ? r.blob() : Promise.reject(r.status))).then((b) => new Promise((ok, no) => {
+        const fr = new FileReader();
+        fr.onload = () => ok(fr.result);
+        fr.onerror = no;
+        fr.readAsDataURL(b);
+      })));
+    }
+    return dataCache.get(url);
+  }
+  const LID_FONTS = [
+    ["/static/fonts/jost-700-latin.woff", "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD"],
+    ["/static/fonts/jost-700-cyrillic.woff", "U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116"],
+  ];
+  let lidFontCSS = null;
+  function lidFont() {
+    if (!lidFontCSS) {
+      lidFontCSS = Promise.all(LID_FONTS.map(([url, range]) => dataURI(url).then((d) =>
+        `@font-face{font-family:JostLid;font-weight:700;src:url(${d.replace(/^data:[^;,]*/, "data:font/woff")}) format("woff");unicode-range:${range}}`
+      ))).then((x) => x.join(""));
+    }
+    return lidFontCSS;
+  }
+  // Lid work happens one piece at a time and never while the row moves:
+  // first the lids of the piles near the middle, then, in spare moments,
+  // the bridges of every other label of this grouping.
+  const lidWanted = new Set();
+  let lidPumping = false;
+  function buildLid(i) {
+    const s = slots[i];
+    const lid = s && s.firstChild.querySelector(".lid");
+    if (!lid || lid.dataset.built) return;
+    lidWanted.add(i);
+    lidPump();
+  }
+  function lidPump() {
+    if (lidPumping) return;
+    lidPumping = true;
+    fontReady.then(() => setTimeout(lidStep, 0));
+  }
+  // Lids are made ahead of the middle so a pile never arrives as a black
+  // square (owner, 2026-11-11, with keys held the row hardly stops): while
+  // the row stands still, every unmade lid, nearest first; while it
+  // moves, only one that is about to be seen, at most every 150 ms (about
+  // 20 ms of work in Safari — one late frame instead of a black square).
+  // Until the page has loaded and rested, only the piles within NEAR, so
+  // the first visit fetches no more covers than before.
+  let lidWide = false, lidLast = 0;
+  window.addEventListener("load", () => setTimeout(() => {
+    lidWide = true;
+    lidPump();
+  }, 2000));
+  function lidStep() {
+    const reach = lidWide ? slots.length : NEAR;
+    let best = -1;
+    if (center >= 0) {
+      for (let d = 0; d <= reach && best < 0; d++) {
+        for (const i of [center - d, center + d]) {
+          const lid = slots[i] && slots[i].firstChild.querySelector(".lid");
+          if (lid && !lid.dataset.built && !lid.hidden) {
+            best = i;
+            break;
+          }
+        }
+      }
+    }
+    lidWanted.clear();
+    if (best >= 0) {
+      const moving = railMoving();
+      const urgent = Math.abs(best - center) <= NEAR + 1;
+      if (moving && (!urgent || performance.now() - lidLast < 150)) {
+        setTimeout(lidStep, 50);
+        return;
+      }
+      lidLast = performance.now();
+      makeLid(best);
+      setTimeout(lidStep, moving ? 50 : 16);
+      return;
+    }
+    if (railMoving()) {
+      setTimeout(lidStep, 50);
+      return;
+    }
+    // nothing to make: work out one more label's bridges ahead of time
+    const next = gs.find((g) => !lidCache.has(lidText(g)));
+    if (next) {
+      lidGeometry(lidText(next));
+      setTimeout(lidStep, 40);
+      return;
+    }
+    lidPumping = false;
+  }
+
+  function makeLid(i) {
+    const s = slots[i];
+    const lid = s && s.firstChild.querySelector(".lid");
+    if (!lid || lid.dataset.built) return;
+    lid.dataset.built = "1";
+    const g = gs[i], first = g.items[0];
+    const tb = performance.now();
+    Promise.all([fontReady, lidFont(), first && first.c ? dataURI(first.c) : ""]).then(([, css, cover]) => {
+      if (!lid.isConnected) return;
+      const t1 = performance.now();
+      const img = new Image();
+      img.alt = "";
+      img.decoding = "async";
+      img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(lidSVG(g, cover, css));
+      const t2 = performance.now();
+      const put = () => {
+        lid.replaceChildren(img);
+        rasterQueue.push({ img, key: g.key });
+        rasterPump();
+        if (DEBUG) dlog(["lb", Math.round(tb - dbg.t0), g.key, Math.round(t1 - tb), Math.round(t2 - t1), Math.round(performance.now() - t2)], "lid " + g.key + ": data " + Math.round(t1 - tb) + ", svg " + Math.round(t2 - t1) + ", decode " + Math.round(performance.now() - t2) + " ms");
+      };
+      if (img.decode) img.decode().then(put, put);
+      else put();
+    }).catch(() => delete lid.dataset.built);
+  }
+
+  // The SVG lid is shown at once, then replaced by a JPEG of itself: WebKit
+  // re-runs the SVG's blur and masks whenever it paints, a bitmap is only
+  // copied (owner's Safari, 2026-11-11: fewer late frames than SVG). JPEG,
+  // not PNG — the lid has no transparency, and it encoded in 23 ms instead
+  // of 37 and took 66 KB instead of 521. Encoding blocks the main thread,
+  // so it waits until the row stands still, one lid per turn.
+  const rasterQueue = [];
+  let rasterTimer = 0;
+  function rasterPump() {
+    if (rasterTimer || !rasterQueue.length) return;
+    const wait = railMoving() ? railMove.until - performance.now() + 120 : 60;
+    rasterTimer = setTimeout(() => {
+      rasterTimer = 0;
+      if (railMoving()) return rasterPump();
+      const { img, key } = rasterQueue.shift();
+      if (img.isConnected) {
+        try {
+          const t3 = performance.now();
+          const cv = document.createElement("canvas");
+          cv.width = cv.height = 600;
+          cv.getContext("2d").drawImage(img, 0, 0, 600, 600);
+          const url = cv.toDataURL("image/jpeg", 0.9);
+          img.src = url;
+          dlog(["xp", Math.round(t3 - dbg.t0), key, "jpg", Math.round(performance.now() - t3), url.length]);
+        } catch (e) {
+          dlog(["xp", Math.round(performance.now() - dbg.t0), key, "jpg failed: " + e.name], "jpg failed: " + e.name);
+        }
+      }
+      rasterPump();
+    }, Math.max(0, wait));
+  }
+
+  // lidSVG draws the lid for stack g over its cover (a data URI).
+  function lidSVG(g, href, css) {
+    const label = lidText(g);
+    const { size, y, bridges } = lidGeometry(label);
+    const u = ++lidSeq;
+    const img = (extra) => (href ? `<image href="${href}" width="300" height="300" preserveAspectRatio="xMidYMid slice" ${extra}/>` : "");
+    const esc = label.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const text = (fill) => `<text x="150" y="${y.toFixed(1)}" text-anchor="middle" font-family="JostLid, sans-serif" font-weight="700" font-size="${size.toFixed(1)}" fill="${fill}">${esc}</text>`;
+    const cut = (fill) => `<g mask="url(#lnb${u})">${text(fill)}<path d="${LID_SLOT}" fill="${fill}"/></g>`;
+    const bridgeRects = bridges.map((r) => `<rect x="${r.x.toFixed(2)}" y="${r.y.toFixed(2)}" width="${r.w.toFixed(2)}" height="${r.h.toFixed(2)}" fill="black"/>`).join("");
+    let shadow = "";
+    for (let k = 1; k <= 10; k++) shadow += `<g transform="translate(0 ${k})"><rect x="-20" y="-20" width="340" height="340" fill="rgba(0,0,0,.0875)" mask="url(#lsh${u})"/></g>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="600" height="600">
+      <defs>
+        <style>${css}</style>
+        <mask id="lnb${u}" maskUnits="userSpaceOnUse" x="-20" y="-20" width="340" height="340"><rect x="-20" y="-20" width="340" height="340" fill="white"/>${bridgeRects}</mask>
+        <mask id="lfr${u}" maskUnits="userSpaceOnUse" x="0" y="0" width="300" height="300"><rect width="300" height="300" fill="white"/>${cut("black")}</mask>
+        <mask id="lin${u}" maskUnits="userSpaceOnUse" x="0" y="0" width="300" height="300"><rect width="300" height="300" fill="black"/>${cut("white")}</mask>
+        <mask id="lsh${u}" maskUnits="userSpaceOnUse" x="-20" y="-20" width="340" height="340"><rect x="-20" y="-20" width="340" height="340" fill="white"/>${cut("black")}</mask>
+        <filter id="lbl${u}" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="7"/></filter>
+        <filter id="lrm${u}" x="-5%" y="-5%" width="110%" height="110%"><feMorphology in="SourceAlpha" operator="erode" radius="0.8" result="e"/><feComposite in="SourceAlpha" in2="e" operator="out" result="r"/><feFlood flood-color="#fff" flood-opacity=".95"/><feComposite in2="r" operator="in"/></filter>
+        <linearGradient id="lgl${u}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="rgba(255,255,255,.28)"/><stop offset=".45" stop-color="rgba(255,255,255,0)"/><stop offset="1" stop-color="rgba(255,255,255,.08)"/></linearGradient>
+      </defs>
+      <rect width="300" height="300" fill="#2a2b2e"/>
+      ${img("")}
+      <g mask="url(#lfr${u})">${img(`filter="url(#lbl${u})"`)}<rect width="300" height="300" fill="rgba(30,32,36,.5)"/></g>
+      <g mask="url(#lin${u})">${shadow}</g>
+      <g filter="url(#lrm${u})">${cut("white")}</g>
+      <rect width="300" height="300" fill="url(#lgl${u})"/>
+      <rect x=".75" y=".75" width="298.5" height="298.5" rx="3" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.5"/>
+    </svg>`;
+  }
+
+  // paintLid puts the lid on pile i (closed) or takes it off (open). With
+  // animate the lid drops forward on its bottom edge, or comes back up.
+  const LID_MS = 420;
+  function paintLid(i, open, animate) {
+    const s = slots[i];
+    if (!s) return;
+    const pile = s.firstChild;
+    let lid = pile.querySelector(".lid");
+    if (!lid) {
+      lid = el("div", "lid");
+      pile.appendChild(lid);
+      // Built when the stack comes near the middle (showNear()).
+      if (center >= 0 && Math.abs(i - center) <= NEAR) buildLid(i);
+    }
+    lid.getAnimations().forEach((a) => a.cancel());
+    const shut = [{ transform: "perspective(1100px) rotateX(0deg)", opacity: 1 }];
+    const down = [{ transform: "perspective(1100px) rotateX(-96deg)", opacity: 0 }];
+    if (open) {
+      if (animate && !reduceMotion.matches && lid.animate && !lid.hidden) {
+        lid.animate([...shut, ...down], { duration: LID_MS, easing: "cubic-bezier(.5,0,.75,.4)" }).onfinish = () => {
+          if (state.open === gs[i].key) lid.hidden = true;
+        };
+      } else lid.hidden = true;
+    } else {
+      const was = lid.hidden;
+      lid.hidden = false;
+      if (animate && was && !reduceMotion.matches && lid.animate) {
+        lid.animate([...down, ...shut], { duration: LID_MS, easing: "cubic-bezier(.2,.7,.3,1)" });
       }
     }
   }
@@ -345,15 +709,6 @@
   const edges = (behind) => (behind > 0 ? Math.min(behind, 40) * 1.5 + 2 + "px" : "0px");
 
   function renderRail(focusKey) {
-    const crumb = el("div", "crumb");
-    const back = el("button", "pill");
-    back.type = "button";
-    back.append(icon(LEFT), document.createTextNode(T.back));
-    back.addEventListener("click", () => leaveStack());
-    crumb.appendChild(back);
-    crumb.hidden = !state.open;
-    stage.appendChild(crumb);
-
     const wrap = el("div", "rail-wrap");
     rail = el("div", "rail" + (state.open ? " is-dig" : ""));
     prevBtn = button("nav-btn prev", T.prev, LEFT, () => go(from() - 1));
@@ -409,6 +764,7 @@
     const front = pile.querySelector(".rec");
     front.replaceChildren(cover(r, Math.abs(i - center) <= NEAR || "defer"));
     paintFallen(pile, g, g.key === state.open ? idx : 0);
+    if (!pile.querySelector(".lid")) paintLid(i, g.key === state.open, false);
     const label = s.lastChild;
     label.textContent = "";
     if (g.key === state.open) {
@@ -423,7 +779,8 @@
       label.appendChild(row);
       s.setAttribute("aria-label", r.a + " — " + r.t + ", " + (idx + 1) + " " + T.of + " " + n);
     } else {
-      label.append(el("span", "slot-title", g.label), el("span", "slot-count", plural(n)));
+      // The lid already carries the stack's name; under it, the count.
+      label.append(el("span", "slot-count", plural(n)));
       s.setAttribute("aria-label", g.label + ", " + plural(n));
     }
   }
@@ -454,43 +811,16 @@
     else enterStack(i);
   }
 
-  // zoomTo switches between the overview and digging like a camera moving
-  // in or out: the layout changes at once (bigger or smaller piles, stack i
-  // in the middle), then the whole scene is drawn from where stack i was
-  // before and glides to its new place and size.
-  const ZOOM_MS = 320;
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-  function zoomTo(i, change) {
-    const pileOf = () => slots[i].querySelector(".pile").getBoundingClientRect();
-    const wrap = rail.parentNode;
-    const before = pileOf();
-    change();
-    go(i, true); // keep this stack in the middle of the resized rail
-    const after = pileOf();
-    if (reduceMotion.matches || !after.width || !wrap.animate) return;
-    const box = wrap.getBoundingClientRect();
-    const ax = after.left + after.width / 2, ay = after.top + after.height / 2;
-    const bx = before.left + before.width / 2, by = before.top + before.height / 2;
-    const origin = `${ax - box.left}px ${ay - box.top}px`;
-    wrap.animate(
-      [
-        { transformOrigin: origin, transform: `translate(${bx - ax}px, ${by - ay}px) scale(${before.width / after.width})` },
-        { transformOrigin: origin, transform: "none" },
-      ],
-      { duration: ZOOM_MS, easing: "cubic-bezier(.2,.7,.3,1)" }
-    );
-  }
 
   function enterStack(i) {
     const g = gs[i];
     if (!g) return;
     state.open = g.key;
     state.pos = 0;
-    zoomTo(i, () => {
-      rail.classList.add("is-dig");
-      stage.querySelector(".crumb").hidden = false;
-      paintSlot(i, 0);
-    });
+    rail.classList.add("is-dig");
+    paintSlot(i, 0);
+    paintLid(i, true, true);
     syncURL();
   }
 
@@ -499,13 +829,11 @@
     const i = gs.findIndex((g) => g.key === state.open);
     state.open = null;
     state.pos = 0;
-    const out = () => {
-      rail.classList.remove("is-dig");
-      stage.querySelector(".crumb").hidden = true;
-      if (i >= 0) paintSlot(i, 0);
-    };
-    if (i >= 0) zoomTo(i, out);
-    else out();
+    rail.classList.remove("is-dig");
+    if (i >= 0) {
+      paintSlot(i, 0);
+      paintLid(i, false, true);
+    }
     syncURL();
   }
 
@@ -592,7 +920,8 @@
   // the rail then crept back or stopped short (measured with ?debug=wheel,
   // 2026-11-10). Nothing else scrolls the rail, so it needs no scroll-snap.
   const RAIL_MS = 380;
-  const railMove = { raf: 0 };
+  const railMove = { raf: 0, until: 0 };
+  const railMoving = () => performance.now() < railMove.until;
   function slideTo(left) {
     cancelAnimationFrame(railMove.raf);
     const from = rail.scrollLeft, dist = left - from;
@@ -601,9 +930,15 @@
       return;
     }
     const t0 = performance.now();
+    railMove.until = t0 + RAIL_MS + 60;
     const ease = (t) => 1 - Math.pow(1 - t, 3); // ease-out, like the flips
     const r = rail;
+    let prevFrame = t0;
     const step = (now) => {
+      if (DEBUG) {
+        dlog(["f", Math.round(now - dbg.t0), Math.round((now - prevFrame) * 10) / 10]);
+        prevFrame = now;
+      }
       const t = Math.min(1, (now - t0) / RAIL_MS);
       r.scrollLeft = from + dist * ease(t);
       if (t < 1 && r === rail) railMove.raf = requestAnimationFrame(step);
@@ -652,15 +987,9 @@
     if (slots[prev]) slots[prev].classList.remove("is-center");
     center = best;
     slots[center].classList.add("is-center");
-    // Digging moves along with the middle stack; the one left behind is
-    // squared up again with its first record in front.
-    if (state.open && gs[center].key !== state.open) {
-      const was = gs.findIndex((g) => g.key === state.open);
-      state.open = gs[center].key;
-      state.pos = 0;
-      if (was >= 0) paintSlot(was, 0);
-      paintSlot(center, 0);
-    }
+    // Moving away from an open stack closes it; the stack that comes to the
+    // middle stays closed (owner, 2026-11-11).
+    if (state.open && gs[center].key !== state.open) leaveStack();
     showNear();
     prevBtn.disabled = center === 0;
     nextBtn.disabled = center === slots.length - 1;
@@ -680,9 +1009,11 @@
     const digging = state.open === g.key;
     switch (key) {
       case "ArrowRight":
+        if (digging) leaveStack(); // close it at once, before the row moves
         go(from() + 1);
         break;
       case "ArrowLeft":
+        if (digging) leaveStack();
         go(from() - 1);
         break;
       case "ArrowDown":

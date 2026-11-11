@@ -25,7 +25,6 @@ var texts = map[string]string{
 	"theme_auto":    "Theme: follows the system",
 	"theme_light":   "Theme: day",
 	"theme_dark":    "Theme: night",
-	"back":          "Back to the collection",
 	"prev":          "Previous",
 	"next":          "Next",
 	"close":         "Close",
