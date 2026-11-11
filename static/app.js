@@ -6,9 +6,10 @@
 //              ↑ on the first record stops digging, like Esc
 //   Enter      while digging: open the record at the front
 //   Esc        close the record; then stop digging (back to the overview)
-// Every vertical gesture is one of these keys, on every system: a wheel,
-// two fingers on a trackpad or one finger on a screen moving DOWN is ↓,
-// moving UP is ↑ (see press()). The server put the whole collection into
+// Every gesture is one of these keys, on every system (see press()): a
+// wheel, two fingers on a trackpad or one finger on a screen moving DOWN is
+// ↓, UP is ↑; sideways they turn pages — moving LEFT is →, RIGHT is ←. One
+// swipe is one key press. The server put the whole collection into
 // <script id="data"> and the strings into <script id="texts">.
 (() => {
   "use strict";
@@ -223,8 +224,8 @@
 
     const wrap = el("div", "rail-wrap");
     rail = el("div", "rail" + (state.open ? " is-dig" : ""));
-    prevBtn = button("nav-btn prev", T.prev, LEFT, () => go(center - 1));
-    nextBtn = button("nav-btn next", T.next, RIGHT, () => go(center + 1));
+    prevBtn = button("nav-btn prev", T.prev, LEFT, () => go(from() - 1));
+    nextBtn = button("nav-btn next", T.next, RIGHT, () => go(from() + 1));
     wrap.append(prevBtn, rail, nextBtn);
     stage.appendChild(wrap);
 
@@ -448,9 +449,15 @@
   }
 
   // ---- moving along the rail ----
+  // aim is the stack a smooth scroll is heading for, until the middle
+  // reaches it, so quick presses or swipes count from there: a second → while
+  // the rail still moves goes one stack further instead of being lost.
+  let aim = -1;
+  const from = () => (aim >= 0 ? aim : center);
   function go(i, instant) {
     if (!rail || !slots.length) return;
     i = Math.max(0, Math.min(slots.length - 1, i));
+    aim = instant || i === center ? -1 : i;
     const s = slots[i];
     const left = s.offsetLeft + s.offsetWidth / 2 - rail.clientWidth / 2;
     rail.scrollTo({ left, behavior: instant ? "instant" : "smooth" });
@@ -478,6 +485,7 @@
         best = i;
       }
     });
+    if (best === aim) aim = -1;
     if (best === center) return;
     const prev = center;
     if (slots[prev]) slots[prev].classList.remove("is-center");
@@ -510,10 +518,10 @@
     const digging = state.open === g.key;
     switch (key) {
       case "ArrowRight":
-        go(center + 1);
+        go(from() + 1);
         break;
       case "ArrowLeft":
-        go(center - 1);
+        go(from() - 1);
         break;
       case "ArrowDown":
         if (digging) flip(1);
@@ -539,74 +547,49 @@
     return true;
   }
 
-  // Wheel and trackpad: up and down are the ↑ and ↓ keys (sideways scrolls
-  // the rail natively).
+  // Wheel and trackpad: every swipe is one arrow key, in both directions —
+  // the rail never scrolls by itself.
   //
-  // Direction: the gesture moves the way the hand does, like the ↓ key —
+  // Direction. Down and up move the way the hand does, like the ↓ key:
   // fingers or wheel down = the next record. Apple devices scroll
   // "naturally" by default, so a downward swipe arrives as a negative
-  // deltaY there; elsewhere a wheel turned down gives a positive one. The
-  // browser cannot tell whether natural scrolling is switched off.
+  // deltaY there; elsewhere a wheel turned down gives a positive one (the
+  // browser cannot tell whether natural scrolling is switched off).
+  // Sideways works like turning a page, as on a phone: fingers moving left
+  // bring the next pile (→); that arrives as a positive deltaX.
   //
-  // One step per gesture: a trackpad sends a stream of events for the swipe
-  // and then keeps sending its inertia, whose deltas only shrink. After a
-  // step the stream is ignored until one of these:
-  //   - it stops (WHEEL_QUIET ms without events);
-  //   - it changes direction;
-  //   - a new swipe starts over the old one's inertia: the deltas fell to
-  //     40% of the peak or less, and then two events in a row are at least
-  //     2.5× the lowest one + 3 px and at least half the peak again.
-  // WHEEL_MIN_GAP keeps one swipe from making two steps. Tuned on simulated
-  // swipes with ±45% jitter and stalls: no double steps in 2000, while
-  // swipes 220 ms apart, weak ones included, each make a step.
+  // One step per swipe. A trackpad sends a swipe and then its inertia as one
+  // stream of events about 8 ms apart. Recorded on the owner's Mac (Safari,
+  // 2026-11-10): a new swipe — even a fast one landing on the previous
+  // swipe's inertia — always begins after a break of 27–39 ms in the stream,
+  // while one swipe and its inertia never pause for 20 ms until their last
+  // 1–2 px. So a break of WHEEL_GAP ms starts a new gesture, and a gesture
+  // steps once, along its stronger axis, as soon as it has moved WHEEL_STEP
+  // px. On that recording this gives exactly one step per swipe (10/10 slow,
+  // 10/10 fast, 10/10 up, 5+5 mixed, 10/10 sideways), each at the start of
+  // the swipe.
   const NATURAL = /Mac|iPhone|iPad|iPod/i.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "");
-  const WHEEL_STEP = 30, WHEEL_QUIET = 150, WHEEL_MIN_GAP = 140;
-  const wheel = { acc: 0, busy: false, timer: 0, at: 0, peak: 0, low: Infinity, sign: 0, hits: 0 };
-  function wheelReset() {
-    wheel.busy = false;
-    wheel.acc = 0;
-    wheel.peak = 0;
-    wheel.low = Infinity;
-    wheel.sign = 0;
-    wheel.hits = 0;
-  }
+  const WHEEL_STEP = 30, WHEEL_GAP = 22;
+  const wheel = { x: 0, y: 0, last: -Infinity, done: false };
   function onWheel(e) {
-    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; // native sideways scrolling
     e.preventDefault();
-    const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY; // lines → pixels
-    if (!delta) return;
-    const size = Math.abs(delta), sign = Math.sign(delta);
-    const now = performance.now();
-    clearTimeout(wheel.timer);
-    wheel.timer = setTimeout(wheelReset, WHEEL_QUIET);
-    if (wheel.busy) {
-      // low is the smallest delta since the latest peak, so a swipe still
-      // speeding up never counts as decayed.
-      const turned = sign !== wheel.sign;
-      const decayed = wheel.low <= wheel.peak * 0.4;
-      const again = decayed && size >= wheel.low * 2.5 + 3 && size >= wheel.peak * 0.5;
-      wheel.hits = again ? wheel.hits + 1 : 0;
-      if (size > wheel.peak) {
-        wheel.peak = size;
-        wheel.low = Infinity;
-      } else if (!again) {
-        wheel.low = Math.min(wheel.low, size);
-      }
-      if (!(turned || wheel.hits >= 2) || now - wheel.at < WHEEL_MIN_GAP) return;
-      wheelReset();
+    const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? rail.clientHeight : 1; // lines, pages → pixels
+    const now = e.timeStamp || performance.now();
+    if (now - wheel.last >= WHEEL_GAP) {
+      wheel.x = 0;
+      wheel.y = 0;
+      wheel.done = false;
     }
-    wheel.acc += delta;
-    if (Math.abs(wheel.acc) < WHEEL_STEP) return;
-    let dir = wheel.acc > 0 ? 1 : -1;
-    if (NATURAL) dir = -dir;
-    wheel.busy = true;
-    wheel.acc = 0;
-    wheel.at = now;
-    wheel.sign = sign;
-    wheel.peak = size;
-    wheel.low = Infinity;
-    wheel.hits = 0;
-    press(dir > 0 ? "ArrowDown" : "ArrowUp");
+    wheel.last = now;
+    wheel.x += e.deltaX * k;
+    wheel.y += e.deltaY * k;
+    if (wheel.done) return;
+    const side = Math.abs(wheel.x) > Math.abs(wheel.y);
+    const moved = side ? wheel.x : wheel.y;
+    if (Math.abs(moved) < WHEEL_STEP) return;
+    wheel.done = true;
+    if (side) press(moved > 0 ? "ArrowRight" : "ArrowLeft");
+    else press((NATURAL ? -moved : moved) > 0 ? "ArrowDown" : "ArrowUp");
   }
 
   // Touch: every swipe is one arrow-key press — finger down = ↓, up = ↑;
