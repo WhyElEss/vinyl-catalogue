@@ -399,3 +399,27 @@ func TestCoverSize(t *testing.T) {
 		}
 	}
 }
+
+// The debug log route exists only on test copies (DEBUG_LOG=1).
+func TestDebugLogRoute(t *testing.T) {
+	a, _ := testApp(t)
+	t.Setenv("DEBUG_LOG", "")
+	if w := post(t, a.routes(), "/debug/wheel-log", `{"x":1}`); w.Code != http.StatusNotFound && w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("without DEBUG_LOG: %d, want 404/405", w.Code)
+	}
+	t.Setenv("DEBUG_LOG", "1")
+	if w := post(t, a.routes(), "/debug/wheel-log", `{"x":1}`); w.Code != http.StatusNoContent {
+		t.Errorf("with DEBUG_LOG: %d, want 204", w.Code)
+	}
+	b, err := os.ReadFile(filepath.Join(a.cfg.DataDir, "debug-wheel-log.json"))
+	if err != nil || string(b) != `{"x":1}` {
+		t.Errorf("log file: %q %v", b, err)
+	}
+}
+
+func post(t *testing.T, h http.Handler, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("POST", path, strings.NewReader(body)))
+	return w
+}

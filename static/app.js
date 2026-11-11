@@ -19,6 +19,111 @@
   const stage = $("#stage");
   const toolbar = $("#toolbar");
   const dialog = $("#overlay");
+
+  // ---- debug: ?debug=wheel ----
+  // A panel in the corner lists every wheel event (time since the previous
+  // one, deltaX, deltaY) and every key press with where it came from; "Save"
+  // downloads the whole log as JSON. Only for finding out what a browser
+  // really sends; nothing leaves the page.
+  const DEBUG = new URLSearchParams(location.search).get("debug") === "wheel";
+  const dbg = { t0: performance.now(), log: [], lines: [], panel: null, list: null, count: null, queued: false, lastWheel: 0 };
+  const now = () => Math.round((performance.now() - dbg.t0) * 10) / 10;
+  function dlog(entry, line) {
+    if (!DEBUG) return;
+    dbg.log.push(entry);
+    if (line) {
+      dbg.lines.push(line);
+      if (dbg.lines.length > 18) dbg.lines.shift();
+    }
+    if (dbg.queued) return;
+    dbg.queued = true;
+    requestAnimationFrame(() => {
+      dbg.queued = false;
+      const w = dbg.log.filter((x) => x[0] === "w").length;
+      const k = dbg.log.filter((x) => x[0] === "k").length;
+      dbg.count.textContent = "wheel events: " + w + " · presses: " + k;
+      dbg.list.textContent = dbg.lines.join("\n");
+    });
+  }
+  if (DEBUG) {
+    const panel = document.createElement("div");
+    panel.className = "debug-panel";
+    const head = document.createElement("div");
+    head.className = "debug-head";
+    dbg.count = document.createElement("span");
+    const save = document.createElement("button");
+    save.type = "button";
+    save.textContent = "Save log";
+    save.addEventListener("click", () => {
+      const blob = new Blob([JSON.stringify({ ua: navigator.userAgent, saved: new Date().toISOString(), log: dbg.log })], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "vinyl-debug-log.json";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    });
+    // Copy puts the log on the clipboard (execCommand works on plain http,
+    // where navigator.clipboard does not); if even that fails, the log is
+    // shown selected so that ⌘C copies it.
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.textContent = "Copy log";
+    copy.addEventListener("click", () => {
+      const text = JSON.stringify({ ua: navigator.userAgent, saved: new Date().toISOString(), log: dbg.log });
+      const ta = document.createElement("textarea");
+      ta.className = "debug-text";
+      ta.value = text;
+      panel.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try {
+        ok = document.execCommand("copy");
+      } catch (e) {}
+      if (ok) {
+        ta.remove();
+        copy.textContent = "Copied " + Math.round(text.length / 1024) + " KB";
+      } else {
+        copy.textContent = "Press ⌘C";
+      }
+      setTimeout(() => (copy.textContent = "Copy log"), 4000);
+    });
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.textContent = "Clear";
+    clear.addEventListener("click", () => {
+      dbg.log = [];
+      dbg.lines = [];
+      dbg.t0 = performance.now();
+      dlog(["c", 0]);
+    });
+    head.append(dbg.count, copy, save, clear);
+    // Test copies (DEBUG_LOG=1 on the server) also keep the log there: it is
+    // sent every 2 s while it grows. Elsewhere the post gets a 404, once.
+    let sent = 0, sending = false, stop = false;
+    setInterval(() => {
+      if (stop || sending || dbg.log.length === sent) return;
+      sending = true;
+      const n = dbg.log.length;
+      fetch("/debug/wheel-log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ua: navigator.userAgent, saved: new Date().toISOString(), log: dbg.log }),
+      })
+        .then((r) => {
+          if (r.status === 404) stop = true;
+          else if (r.ok) sent = n;
+          dbg.count.dataset.sent = r.ok ? "sent " + n : "";
+        })
+        .catch(() => {})
+        .finally(() => (sending = false));
+    }, 2000);
+    dbg.list = document.createElement("pre");
+    panel.append(head, dbg.list);
+    document.body.appendChild(panel);
+    dbg.panel = panel;
+    dlog(["c", 0], "debug on — wheel: gap ms, dx, dy");
+  }
   const dialogBody = $("#overlay-body");
   if (!data.length) return;
 
@@ -154,6 +259,7 @@
         if (state.pos) p.set("r", String(state.pos));
       } else if (center > 0) p.set("at", gs[center].key);
     }
+    if (DEBUG) p.set("debug", "wheel");
     const qs = p.toString();
     const url = "/" + (qs ? "?" + qs : "");
     if (location.pathname === "/" && location.pathname + location.search !== url) {
@@ -454,18 +560,47 @@
   // the rail still moves goes one stack further instead of being lost.
   let aim = -1;
   const from = () => (aim >= 0 ? aim : center);
+  // The rail is moved by our own frame-by-frame animation, not the
+  // browser's smooth scrolling: Safari cancels a smooth scrollTo as soon as
+  // trackpad events arrive over the rail (even ones the page cancels), and
+  // the rail then crept back or stopped short (measured with ?debug=wheel,
+  // 2026-11-10). Nothing else scrolls the rail, so it needs no scroll-snap.
+  const RAIL_MS = 380;
+  const railMove = { raf: 0 };
+  function slideTo(left) {
+    cancelAnimationFrame(railMove.raf);
+    const from = rail.scrollLeft, dist = left - from;
+    if (Math.abs(dist) < 1 || reduceMotion.matches) {
+      rail.scrollLeft = left;
+      return;
+    }
+    const t0 = performance.now();
+    const ease = (t) => 1 - Math.pow(1 - t, 3); // ease-out, like the flips
+    const r = rail;
+    const step = (now) => {
+      const t = Math.min(1, (now - t0) / RAIL_MS);
+      r.scrollLeft = from + dist * ease(t);
+      if (t < 1 && r === rail) railMove.raf = requestAnimationFrame(step);
+    };
+    railMove.raf = requestAnimationFrame(step);
+  }
   function go(i, instant) {
     if (!rail || !slots.length) return;
     i = Math.max(0, Math.min(slots.length - 1, i));
     aim = instant || i === center ? -1 : i;
+    if (DEBUG) dlog(["g", now(), center, i, instant ? 1 : 0]);
     const s = slots[i];
     const left = s.offsetLeft + s.offsetWidth / 2 - rail.clientWidth / 2;
-    rail.scrollTo({ left, behavior: instant ? "instant" : "smooth" });
-    if (instant) updateCenter();
+    if (instant) {
+      cancelAnimationFrame(railMove.raf);
+      rail.scrollLeft = left;
+      updateCenter();
+    } else slideTo(left);
   }
 
   let ticking = false;
   function onScroll() {
+    if (DEBUG) dlog(["s", now(), Math.round(rail.scrollLeft)]);
     if (ticking) return;
     ticking = true;
     requestAnimationFrame(() => {
@@ -512,8 +647,13 @@
   }
 
   // press is the one place where keys and gestures turn into actions.
+  let pressFrom = "key";
   function press(key) {
     if (!rail || center < 0) return false;
+    if (DEBUG) {
+      dlog(["k", now(), key, pressFrom, center, aim], "PRESS " + key + " (" + pressFrom + ")");
+      pressFrom = "key";
+    }
     const g = gs[center];
     const digging = state.open === g.key;
     switch (key) {
@@ -569,13 +709,25 @@
   // 10/10 fast, 10/10 up, 5+5 mixed, 10/10 sideways), each at the start of
   // the swipe.
   const NATURAL = /Mac|iPhone|iPad|iPod/i.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "");
-  const WHEEL_STEP = 30, WHEEL_GAP = 22;
-  const wheel = { x: 0, y: 0, last: -Infinity, done: false };
+  //
+  // Right after a press the page is busy starting its animation, and Safari
+  // then holds the trackpad events for 30–60 ms and hands them over as one
+  // big delta — a break that looks like a new swipe. On the owner's debug
+  // log every such false second press came 18–79 ms after the first, and
+  // the quickest real swipes 440 ms apart; so no new swipe starts within
+  // WHEEL_AFTER_PRESS ms of a press (100–250 ms all gave the same result on
+  // both recordings).
+  const WHEEL_STEP = 30, WHEEL_GAP = 22, WHEEL_AFTER_PRESS = 150;
+  const wheel = { x: 0, y: 0, last: -Infinity, done: false, pressed: -Infinity };
   function onWheel(e) {
     e.preventDefault();
     const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? rail.clientHeight : 1; // lines, pages → pixels
     const now = e.timeStamp || performance.now();
-    if (now - wheel.last >= WHEEL_GAP) {
+    if (DEBUG) {
+      const gap = wheel.last > -Infinity ? Math.round(now - wheel.last) : -1;
+      dlog(["w", Math.round((performance.now() - dbg.t0) * 10) / 10, Math.round((now - dbg.t0) * 10) / 10, e.deltaX, e.deltaY, e.deltaMode, gap], "w +" + gap + "ms  " + e.deltaX + ", " + e.deltaY);
+    }
+    if (now - wheel.last >= WHEEL_GAP && now - wheel.pressed >= WHEEL_AFTER_PRESS) {
       wheel.x = 0;
       wheel.y = 0;
       wheel.done = false;
@@ -588,6 +740,8 @@
     const moved = side ? wheel.x : wheel.y;
     if (Math.abs(moved) < WHEEL_STEP) return;
     wheel.done = true;
+    wheel.pressed = now;
+    pressFrom = "wheel";
     if (side) press(moved > 0 ? "ArrowRight" : "ArrowLeft");
     else press((NATURAL ? -moved : moved) > 0 ? "ArrowDown" : "ArrowUp");
   }
