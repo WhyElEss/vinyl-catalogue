@@ -214,7 +214,7 @@ type indexPage struct {
 
 // clientTexts are the strings the page script needs.
 var clientTextKeys = []string{"of", "nothing", "prev", "next",
-	"back", "close", "other", "prev_record", "next_record", "enter_stack", "order_asc", "order_desc"}
+	"back", "close", "other", "prev_record", "next_record", "enter_stack", "order_asc", "order_desc", "various"}
 
 func (a *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 	p := indexPage{base: a.base(r)}
@@ -229,8 +229,10 @@ func (a *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 		for i, c := range all {
 			pos[c.I] = i
 		}
-		for _, r := range rs {
-			p.Releases = append(p.Releases, all[pos[r.Instance]])
+		for i, r := range rs {
+			c := all[pos[r.Instance]]
+			c.P = i
+			p.Releases = append(p.Releases, c)
 		}
 	})
 	data, _ := json.Marshal(p.Releases)

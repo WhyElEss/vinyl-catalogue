@@ -47,6 +47,61 @@ var foldAccents = strings.NewReplacer(
 	"ё", "е",
 )
 
+// sortAsField is the name of the owner's collection field that overrides a
+// record's title in sorting (matched without regard to case).
+const sortAsField = "sort as"
+
+// variousArtistID is Discogs' artist "Various", credited on compilations.
+const variousArtistID = 194
+
+// compilation tells whether the release is a various-artists compilation:
+// those stand in a stack of their own, ordered by title, then year.
+func (r *Release) compilation() bool {
+	return len(r.Artists) > 0 && (r.Artists[0].ID == variousArtistID || strings.EqualFold(r.Artists[0].Sort, "Various"))
+}
+
+// titleSort is what a release is ordered by among its neighbours: the
+// owner's "Sort as" field when set, else the title.
+func (r *Release) titleSort() string {
+	s := r.SortAs
+	if s == "" {
+		s = r.Title
+	}
+	return foldAccents.Replace(strings.ToLower(strings.TrimSpace(s)))
+}
+
+// naturalLess compares strings with runs of digits taken as numbers, so
+// "vol. 2" comes before "vol. 10".
+func naturalLess(a, b string) bool {
+	for a != "" && b != "" {
+		da, db := digitRun(a), digitRun(b)
+		if da > 0 && db > 0 {
+			na, nb := strings.TrimLeft(a[:da], "0"), strings.TrimLeft(b[:db], "0")
+			if len(na) != len(nb) {
+				return len(na) < len(nb)
+			}
+			if na != nb {
+				return na < nb
+			}
+			a, b = a[da:], b[db:]
+			continue
+		}
+		if a[0] != b[0] {
+			return a[0] < b[0]
+		}
+		a, b = a[1:], b[1:]
+	}
+	return len(a) < len(b)
+}
+
+func digitRun(s string) int {
+	n := 0
+	for n < len(s) && s[n] >= '0' && s[n] <= '9' {
+		n++
+	}
+	return n
+}
+
 // artistSort is the sort key of a release's first credited artist.
 func (r *Release) artistSort() string {
 	if len(r.Artists) == 0 {
@@ -192,16 +247,18 @@ func cleanNotes(s string) []string {
 
 // clientRelease is one record in the JSON the page script works from.
 type clientRelease struct {
-	I int64  `json:"i"` // collection instance
-	T string `json:"t"` // title
-	A string `json:"a"` // artist line
-	S string `json:"s"` // artist sort key
-	Y int    `json:"y"` // this pressing's year
-	O int    `json:"o"` // original year, 0 while unknown
-	G string `json:"g"` // primary genre
-	F string `json:"f"` // short format
-	C string `json:"c"` // cover URL on this site, "" without one
-	Q string `json:"q"` // extra search text: tags, labels, catalogue numbers
+	I int64  `json:"i"`           // collection instance
+	T string `json:"t"`           // title
+	A string `json:"a"`           // artist line
+	S string `json:"s"`           // artist sort key
+	P int    `json:"p"`           // place in the overall order (see byArtist)
+	V bool   `json:"v,omitempty"` // a various-artists compilation
+	Y int    `json:"y"`           // this pressing's year
+	O int    `json:"o"`           // original year, 0 while unknown
+	G string `json:"g"`           // primary genre
+	F string `json:"f"`           // short format
+	C string `json:"c"`           // cover URL on this site, "" without one
+	Q string `json:"q"`           // extra search text: tags, labels, catalogue numbers
 }
 
 func (a *App) clientReleases(d *Data) []clientRelease {
@@ -214,23 +271,33 @@ func (a *App) clientReleases(d *Data) []clientRelease {
 			q = append(q, l.Name, l.Catno)
 		}
 		out = append(out, clientRelease{
-			I: r.Instance, T: r.Title, A: r.artistLine(), S: r.artistSort(), Y: r.Year, O: originalYear(d, r),
+			I: r.Instance, T: r.Title, A: r.artistLine(), S: r.artistSort(), V: r.compilation(), Y: r.Year, O: originalYear(d, r),
 			G: r.primaryGenre(), F: r.formatShort(), C: a.coverURL(d, r), Q: strings.Join(q, " "),
 		})
 	}
 	return out
 }
 
-// byArtist orders releases by artist, then original year, then title.
+// byArtist orders releases by artist, then original year, then title
+// ("Sort as" in place of the title when the owner set it). Compilations
+// come after everything else, by title, then year.
 func byArtist(d *Data, rs []*Release) {
 	sort.SliceStable(rs, func(i, j int) bool {
 		a, b := rs[i], rs[j]
+		if ca, cb := a.compilation(), b.compilation(); ca != cb {
+			return cb
+		} else if ca {
+			if ta, tb := a.titleSort(), b.titleSort(); ta != tb {
+				return naturalLess(ta, tb)
+			}
+			return sortYear(d, a) < sortYear(d, b)
+		}
 		if ka, kb := a.artistSort(), b.artistSort(); ka != kb {
 			return ka < kb
 		}
 		if ya, yb := sortYear(d, a), sortYear(d, b); ya != yb {
 			return ya < yb
 		}
-		return a.Title < b.Title
+		return naturalLess(a.titleSort(), b.titleSort())
 	})
 }

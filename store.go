@@ -67,6 +67,9 @@ type Release struct {
 	Formats  []Format `json:"formats,omitempty"`
 	Labels   []Label  `json:"labels,omitempty"`
 	CoverURL string   `json:"cover_url,omitempty"` // cover_image from the collection list
+	// SortAs is the owner's "Sort as" collection field: what to sort by
+	// instead of the title. Empty for almost every record.
+	SortAs string `json:"sort_as,omitempty"`
 }
 
 type Owner struct {

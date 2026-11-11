@@ -161,7 +161,21 @@ type apiCollectionPage struct {
 			Genres     []string    `json:"genres"`
 			Styles     []string    `json:"styles"`
 		} `json:"basic_information"`
+		// Notes are the owner's own collection fields; only private ones
+		// need the owner's token. Only the "Sort as" field is ever kept.
+		Notes []struct {
+			FieldID int    `json:"field_id"`
+			Value   string `json:"value"`
+		} `json:"notes"`
 	} `json:"releases"`
+}
+
+// apiFields lists the owner's collection fields (names and ids).
+type apiFields struct {
+	Fields []struct {
+		ID   int    `json:"id"`
+		Name string `json:"name"`
+	} `json:"fields"`
 }
 
 type apiTrack struct {
@@ -193,6 +207,14 @@ func (d *discogsAPI) user(ctx context.Context, name string) (apiUser, error) {
 	var u apiUser
 	err := d.get(ctx, "/users/"+url.PathEscape(name), &u)
 	return u, err
+}
+
+// collectionFields lists the collection's own fields; without the owner's
+// token Discogs returns only the public ones.
+func (d *discogsAPI) collectionFields(ctx context.Context, name string) (apiFields, error) {
+	var f apiFields
+	err := d.get(ctx, "/users/"+url.PathEscape(name)+"/collection/fields", &f)
+	return f, err
 }
 
 // collectionPage reads one page of folder 0 ("All"), newest first.

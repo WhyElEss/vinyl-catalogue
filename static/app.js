@@ -193,8 +193,9 @@
     if (/[а-я]/.test(c)) return { key: c.toUpperCase(), rank: 1 };
     return { key: "#", rank: 2 };
   };
-  // Artist (without "The"), then the original year, then the title.
-  const byArtist = (a, b) => collator.compare(a.k, b.k) || (a.sy || 9999) - (b.sy || 9999) || collator.compare(a.t, b.t);
+  // The server's order (p): artist without "The", then the original year,
+  // then the title or the owner's "Sort as"; compilations last, by title.
+  const byArtist = (a, b) => a.p - b.p;
 
   function groups(list) {
     const m = new Map();
@@ -205,6 +206,11 @@
     for (const r of list) {
       switch (state.group) {
         case "artist": {
+          // Compilations stand apart, in one stack after "#", as on the shelf.
+          if (r.v) {
+            add("various", T.various, 3, r);
+            break;
+          }
           const i = initial(r.k);
           add(i.key, i.key, i.rank, r);
           break;

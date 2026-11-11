@@ -51,6 +51,7 @@ var texts = map[string]string{
 	"not_found":     "There is no such record in the collection.",
 	"empty":         "The collection is being read from Discogs. Refresh the page in a minute.",
 	"other":         "Other",
+	"various":       "Various",
 }
 
 // t returns the interface text for key (the site is English only).

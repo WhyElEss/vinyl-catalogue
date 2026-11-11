@@ -54,6 +54,18 @@ func (a *App) syncOnce(ctx context.Context, full bool) error {
 	if err != nil {
 		return fmt.Errorf("user: %w", err)
 	}
+	// The owner's "Sort as" field, if there is one (by name, any case). A
+	// failure here only means no custom order this time.
+	sortField := 0
+	if f, err := a.discogs.collectionFields(ctx, a.cfg.DiscogsUser); err != nil {
+		log.Printf("sync: collection fields: %v", err)
+	} else {
+		for _, x := range f.Fields {
+			if strings.EqualFold(strings.TrimSpace(x.Name), sortAsField) {
+				sortField = x.ID
+			}
+		}
+	}
 	var releases []Release
 	for page, pages := 1, 1; page <= pages; page++ {
 		p, err := a.discogs.collectionPage(ctx, a.cfg.DiscogsUser, page)
@@ -62,8 +74,14 @@ func (a *App) syncOnce(ctx context.Context, full bool) error {
 		}
 		pages = p.Pagination.Pages
 		for _, r := range p.Releases {
-			releases = append(releases, releaseFromAPI(r.ID, r.InstanceID, r.Basic.MasterID, r.Basic.Title, r.Basic.CoverImage,
-				r.Basic.Year, r.Basic.Artists, r.Basic.Formats, r.Basic.Labels, r.Basic.Genres, r.Basic.Styles))
+			rel := releaseFromAPI(r.ID, r.InstanceID, r.Basic.MasterID, r.Basic.Title, r.Basic.CoverImage,
+				r.Basic.Year, r.Basic.Artists, r.Basic.Formats, r.Basic.Labels, r.Basic.Genres, r.Basic.Styles)
+			for _, n := range r.Notes {
+				if sortField != 0 && n.FieldID == sortField {
+					rel.SortAs = strings.TrimSpace(n.Value)
+				}
+			}
+			releases = append(releases, rel)
 		}
 	}
 

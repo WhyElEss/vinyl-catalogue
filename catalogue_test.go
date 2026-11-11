@@ -109,14 +109,20 @@ func fakeDiscogs(t *testing.T) (*httptest.Server, *int, *string) {
 		switch {
 		case r.URL.Path == "/users/owner":
 			io.WriteString(w, `{"username":"owner","name":"Record Owner","profile":"hi"}`)
+		case r.URL.Path == "/users/owner/collection/fields":
+			// A private personal field next to the sort field; only the
+			// latter may ever be kept.
+			io.WriteString(w, `{"fields":[{"id":5,"name":"Owner","type":"dropdown","public":false,"options":["Yuri"]},
+				{"id":7,"name":"Sort As","type":"textarea","public":false,"lines":1}]}`)
 		case r.URL.Path == "/users/owner/collection/folders/0/releases":
 			if r.URL.Query().Get("page") == "1" {
 				fmt.Fprintf(w, `{"pagination":{"page":1,"pages":2,"items":3},"releases":[%s,%s]}`,
 					rel(10, 100, 1000, "The Beatles", "Abbey Road", 2019, "2025-01-02T10:00:00-08:00"),
 					rel(11, 101, 1001, "The Beatles", "Please Please Me", 2012, "2024-01-02T10:00:00-08:00"))
 			} else {
-				fmt.Fprintf(w, `{"pagination":{"page":2,"pages":2,"items":3},"releases":[%s]}`,
-					rel(12, 102, 0, "Bee Gees", "Main Course", 1975, "2023-01-02T10:00:00-08:00"))
+				mc := rel(12, 102, 0, "Bee Gees", "Main Course", 1975, "2023-01-02T10:00:00-08:00")
+				mc = mc[:len(mc)-1] + `,"notes":[{"field_id":5,"value":"Yuri"},{"field_id":7,"value":" Course, Main "}]}`
+				fmt.Fprintf(w, `{"pagination":{"page":2,"pages":2,"items":3},"releases":[%s]}`, mc)
 			}
 		case r.URL.Path == "/releases/10":
 			fmt.Fprintf(w, `{"id":10,"country":"UK","released":"2019-09-27","notes":"Remix by [a=Giles Martin].",
@@ -189,13 +195,23 @@ func TestSyncAndPages(t *testing.T) {
 		t.Errorf("cover not stored: %v", err)
 	}
 
-	// A second sync reads only the list again: user + 2 pages.
+	// The owner's "Sort as" field is kept (trimmed); their other fields not.
+	for _, r := range d.Releases {
+		if want := map[int64]string{12: "Course, Main"}[r.ID]; r.SortAs != want {
+			t.Errorf("release %d SortAs = %q, want %q", r.ID, r.SortAs, want)
+		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(a.cfg.DataDir, "catalogue.json")); strings.Contains(string(b), "Yuri") {
+		t.Errorf("a private collection field was stored")
+	}
+
+	// A second sync reads only the list again: user + fields + 2 pages.
 	before := *calls
 	if err := a.syncOnce(context.Background(), false); err != nil {
 		t.Fatal(err)
 	}
-	if n := *calls - before; n != 3 {
-		t.Errorf("second sync made %d requests, want 3", n)
+	if n := *calls - before; n != 4 {
+		t.Errorf("second sync made %d requests, want 4", n)
 	}
 
 	h := a.routes()
@@ -321,8 +337,8 @@ func TestFullSyncReplacesCover(t *testing.T) {
 	if err := a.syncOnce(context.Background(), true); err != nil {
 		t.Fatal(err)
 	}
-	// user + 2 pages + 3 releases + the new image; masters are known already.
-	if n := *calls - before; n != 1+2+3+1 {
+	// user + fields + 2 pages + 3 releases + the new image; masters are known already.
+	if n := *calls - before; n != 1+1+2+3+1 {
 		t.Errorf("full sync made %d requests", n)
 	}
 	b, _ = os.ReadFile(cover)
@@ -422,4 +438,45 @@ func post(t *testing.T, h http.Handler, path, body string) *httptest.ResponseRec
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("POST", path, strings.NewReader(body)))
 	return w
+}
+
+// Compilations stand last, by title (or "Sort as"), then year; everyone
+// else by artist, original year, title; "Sort as" replaces the title.
+func TestOrderCompilationsAndSortAs(t *testing.T) {
+	va := func(id int64, title string, year int, sortAs string) Release {
+		return Release{ID: id, Instance: id, Title: title, Year: year, SortAs: sortAs,
+			Artists: []Artist{{Name: "Various", Sort: "Various", ID: variousArtistID}}}
+	}
+	ar := func(id int64, artist, title string, year int, sortAs string) Release {
+		return Release{ID: id, Instance: id, Title: title, Year: year, SortAs: sortAs,
+			Artists: []Artist{{Name: artist, Sort: artist, ID: id}}}
+	}
+	d := &Data{Releases: []Release{
+		va(1, "Tower Of Power", 2015, ""),
+		va(2, "Guardians Of The Galaxy Vol. 10", 2030, ""),
+		ar(3, "Wings", "Venus And Mars", 1975, ""),
+		va(4, "Freedom Power", 2020, "Tower Of Power 2"),
+		va(5, "Guardians Of The Galaxy Vol. 2", 2017, ""),
+		ar(6, "ABBA", "Waterloo", 1974, ""),
+		ar(7, "ABBA", "Arrival", 1976, ""),
+		ar(8, "ABBA", "Voulez-Vous", 1979, "Arrival"),
+		va(9, "Miami Vice", 1985, ""),
+		va(10, "Miami Vice", 1984, ""),
+	}}
+	rs := make([]*Release, len(d.Releases))
+	for i := range d.Releases {
+		rs[i] = &d.Releases[i]
+	}
+	byArtist(d, rs)
+	var got []int64
+	for _, r := range rs {
+		got = append(got, r.ID)
+	}
+	want := []int64{6, 7, 8, 3, 5, 2, 10, 9, 1, 4}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("order %v, want %v", got, want)
+	}
+	if !d.Releases[0].compilation() || d.Releases[2].compilation() {
+		t.Errorf("compilation flags wrong")
+	}
 }
