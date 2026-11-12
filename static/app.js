@@ -128,7 +128,8 @@
     panel.append(head, dbg.list);
     document.body.appendChild(panel);
     dbg.panel = panel;
-    dlog(["c", 0], "debug on — wheel: gap ms, dx, dy");
+    const nav = (performance.getEntriesByType && performance.getEntriesByType("navigation")[0]) || {};
+    dlog(["c", 0, nav.type || "?"], "debug on (" + (nav.type || "?") + ") — wheel: gap ms, dx, dy");
     // Every frame that came more than 25 ms after the previous one (a
     // dropped frame), whatever caused it.
     let last = performance.now();
@@ -535,7 +536,15 @@
   }
   // blurCover makes the blurred cover of c (a small canvas, c.blur) and
   // then marks c ready; without a worker c is ready without a blur.
-  function blurCover(c) {
+  // Safari sometimes draws a cover that has just been decoded as nothing:
+  // in the owner's Safari 27.2 (2026-11-12), opening the page in a new
+  // window left the first cover's copy fully transparent about 1 time in
+  // 5 (img.complete, decode() resolved, natural size known), so its lid
+  // showed the tint over the sharp cover. Covers are opaque JPEGs, so a
+  // copy that is not opaque was not drawn: it is drawn again a moment
+  // later, up to BLUR_TRIES times.
+  const BLUR_TRIES = 20, BLUR_RETRY_MS = 100;
+  function blurCover(c, tries = 0) {
     const w = lidWorker();
     if (!w) {
       c.st = "ready";
@@ -549,16 +558,42 @@
     const iw = img.naturalWidth, ih = img.naturalHeight, s = Math.min(iw, ih);
     x.drawImage(img, (iw - s) / 2, (ih - s) / 2, s, s, BLUR_PAD, BLUR_PAD, BLUR_S, BLUR_S);
     const data = x.getImageData(0, 0, W, W).data;
+    if (!opaque(data, W) && tries < BLUR_TRIES) {
+      if (DEBUG) dlog(["br", Math.round(performance.now() - dbg.t0), img.src.split("/").pop().split("?")[0], tries + 1], "cover drawn empty, again (" + (tries + 1) + ")");
+      setTimeout(() => blurCover(c, tries + 1), BLUR_RETRY_MS);
+      return;
+    }
     const id = ++blurSeq;
+    const ain = DEBUG ? alphaMean(data) : 0;
     blurJobs.set(id, (buf, ms) => {
       if (buf) {
         x.putImageData(new ImageData(new Uint8ClampedArray(buf), W, W), 0, 0);
         c.blur = cv;
-        if (DEBUG) dlog(["bt", Math.round(performance.now() - dbg.t0), Math.round(ms * 10) / 10]);
       }
+      // bt: time, cover, worker ms, cover size as decoded, img.complete,
+      // mean alpha of the small copy sent and of the blur that came back
+      if (DEBUG) dlog(["bt", Math.round(performance.now() - dbg.t0), img.src.split("/").pop().split("?")[0], Math.round((ms || 0) * 10) / 10, iw + "x" + ih, img.complete, ain, buf ? alphaMean(new Uint8ClampedArray(buf)) : "none"]);
       c.st = "ready";
     });
     w.postMessage({ id, W, boxes: BLUR_BOXES, buf: data.buffer }, [data.buffer]);
+  }
+  // opaque tells whether nine points spread over the cover's place in the
+  // small copy are fully opaque, i.e. the cover was really drawn there.
+  function opaque(d, W) {
+    for (const fy of [0.2, 0.5, 0.8]) {
+      for (const fx of [0.2, 0.5, 0.8]) {
+        const x = Math.round(BLUR_PAD + fx * BLUR_S), y = Math.round(BLUR_PAD + fy * BLUR_S);
+        if (d[(y * W + x) * 4 + 3] !== 255) return false;
+      }
+    }
+    return true;
+  }
+  // Mean opacity (0–255) of the middle of a square RGBA buffer, for the log.
+  function alphaMean(d) {
+    const W = Math.round(Math.sqrt(d.length / 4)), a = Math.round(W / 4);
+    let sum = 0, n = 0;
+    for (let y = a; y < W - a; y++) for (let x = a; x < W - a; x++, n++) sum += d[(y * W + x) * 4 + 3];
+    return Math.round(sum / n);
   }
   const scratch = [];
   function pad(n) {
@@ -776,7 +811,10 @@
     const g = gs[i];
     const t = performance.now();
     lid.replaceChildren(drawLid(g, lidCover(g)));
-    if (DEBUG) dlog(["lb", Math.round(t - dbg.t0), g.key, Math.round((performance.now() - t) * 10) / 10], "lid " + g.key + ": " + Math.round(performance.now() - t) + " ms");
+    if (DEBUG) {
+      const cov = lidCover(g);
+      dlog(["lb", Math.round(t - dbg.t0), g.key, Math.round((performance.now() - t) * 10) / 10, cov.img ? "img" : "noimg", cov.blur ? "blur" : "noblur", cov.img ? cov.img.naturalWidth + "x" + cov.img.naturalHeight : ""], "lid " + g.key + ": " + Math.round(performance.now() - t) + " ms" + (cov.blur ? "" : " NO BLUR"));
+    }
   }
 
   // paintLid puts the lid on pile i (closed) or takes it off (open). With
