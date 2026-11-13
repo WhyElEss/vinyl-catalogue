@@ -1081,6 +1081,20 @@
   // the rail then crept back or stopped short (measured with ?debug=wheel,
   // 2026-11-10). Nothing else scrolls the rail, so it needs no scroll-snap.
   const RAIL_MS = 380;
+  // The slide's curve is cubic-bezier(.2, 0, .2, 1): a short soft start,
+  // then the same long braking. Until 2026-11-12 it was ease-out cubic,
+  // whose speed is highest in the very first frame (12.6% of the way in
+  // 16.7 ms); the owner compared both in Safari: "Мягкий лучше".
+  function softEase(x) {
+    const B = (t, a, b) => 3 * a * t * (1 - t) * (1 - t) + 3 * b * t * t * (1 - t) + t * t * t;
+    let lo = 0, hi = 1;
+    for (let i = 0; i < 30; i++) {
+      const m = (lo + hi) / 2;
+      if (B(m, 0.2, 0.2) < x) lo = m;
+      else hi = m;
+    }
+    return B((lo + hi) / 2, 0, 1);
+  }
   const railMove = { raf: 0, until: 0 };
   const railMoving = () => performance.now() < railMove.until;
   function slideTo(left) {
@@ -1090,15 +1104,22 @@
       rail.scrollLeft = left;
       return;
     }
-    const t0 = performance.now();
+    let t0 = performance.now();
     railMove.until = t0 + RAIL_MS + 60;
-    const ease = (t) => 1 - Math.pow(1 - t, 3); // ease-out, like the flips
+    const ease = softEase;
     const r = rail;
-    let prevFrame = t0;
+    let prevFrame = t0, first = true;
     const step = (now) => {
       if (DEBUG) {
         dlog(["f", Math.round(now - dbg.t0), Math.round((now - prevFrame) * 10) / 10]);
         prevFrame = now;
+      }
+      if (first) {
+        // the clock starts at the first frame, so a late first frame
+        // does not jump ahead
+        first = false;
+        t0 = now;
+        railMove.until = t0 + RAIL_MS + 60;
       }
       const t = Math.min(1, (now - t0) / RAIL_MS);
       r.scrollLeft = from + dist * ease(t);
