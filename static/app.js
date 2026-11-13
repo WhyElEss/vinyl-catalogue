@@ -902,6 +902,7 @@
     rail.addEventListener("scroll", onScroll, { passive: true });
     rail.addEventListener("wheel", onWheel, { passive: false });
     rail.addEventListener("touchstart", onTouchStart, { passive: true });
+    rail.addEventListener("touchmove", onTouchMove, { passive: true });
     rail.addEventListener("touchend", onTouchEnd, { passive: true });
 
     const start = Math.max(0, gs.findIndex((g) => g.key === focusKey));
@@ -1263,19 +1264,40 @@
   // sideways the finger pushes the row like a page: moving left brings the
   // next pile (→), moving right the previous one (←). The rail itself does
   // not follow the finger (touch-action in style.css).
+  // The key is pressed while the finger is still moving, as soon as it has
+  // gone TOUCH_STEP px one way (and 1.5× more than the other way) — not when
+  // it lifts: until 2026-11-12 the row stood still for the whole stroke
+  // (owner: "очень легкое подтормаживание в начале движения" on iOS).
+  // One press per touch; the rest of the stroke does nothing.
+  const TOUCH_STEP = 30;
   let touch = null;
   function onTouchStart(e) {
     const t = e.changedTouches[0];
-    touch = { x: t.clientX, y: t.clientY };
+    touch = { x: t.clientX, y: t.clientY, t: e.timeStamp, done: 0 };
+    if (DEBUG) dlog(["ts", now()]);
+  }
+  function touchPress(t, ts, step) {
+    const dx = t.clientX - touch.x, dy = t.clientY - touch.y;
+    const ax = Math.abs(dx), ay = Math.abs(dy);
+    let key = "";
+    if (ay > step && ay > ax * 1.5) key = dy > 0 ? "ArrowDown" : "ArrowUp";
+    else if (ax > step && ax > ay * 1.5) key = dx < 0 ? "ArrowRight" : "ArrowLeft";
+    if (!key) return;
+    touch.done = ts;
+    // tp: time, ms from touch start to the press, dx, dy
+    if (DEBUG) dlog(["tp", now(), Math.round(ts - touch.t), Math.round(dx), Math.round(dy)]);
+    pressFrom = "touch";
+    press(key);
+  }
+  function onTouchMove(e) {
+    if (touch && !touch.done) touchPress(e.changedTouches[0], e.timeStamp, TOUCH_STEP);
   }
   function onTouchEnd(e) {
     if (!touch) return;
-    const t = e.changedTouches[0];
-    const dx = t.clientX - touch.x, dy = t.clientY - touch.y;
+    // te: time, ms from touch start to lift, ms the press came before lift
+    if (DEBUG) dlog(["te", now(), Math.round(e.timeStamp - touch.t), touch.done ? Math.round(e.timeStamp - touch.done) : -1]);
+    if (!touch.done) touchPress(e.changedTouches[0], e.timeStamp, 40);
     touch = null;
-    const ax = Math.abs(dx), ay = Math.abs(dy);
-    if (ay > 40 && ay > ax * 1.5) press(dy > 0 ? "ArrowDown" : "ArrowUp");
-    else if (ax > 40 && ax > ay * 1.5) press(dx < 0 ? "ArrowRight" : "ArrowLeft");
   }
 
   // ---- release overlay ----
