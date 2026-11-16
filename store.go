@@ -50,6 +50,11 @@ type Details struct {
 	// replaces ours at the next daily refresh.
 	Cover  string    `json:"cover,omitempty"`
 	ReadAt time.Time `json:"read_at"`
+	// Barcodes are the release's barcodes on Discogs (digits only, 12 or 13),
+	// used to find the album on Apple Music. IDsRead marks details read since
+	// barcodes were kept, so older ones are read again once.
+	Barcodes []string `json:"barcodes,omitempty"`
+	IDsRead  bool     `json:"ids_read,omitempty"`
 }
 
 // Release is one copy in the collection (a collection instance). The same
@@ -86,7 +91,9 @@ type Data struct {
 	// new requests.
 	Details     map[int64]*Details `json:"details"`
 	MasterYears map[int64]int      `json:"master_years"`
-	SyncedAt    time.Time          `json:"synced_at"`
+	// Apple holds the Apple Music album found for each Discogs release id.
+	Apple    map[int64]*AppleMatch `json:"apple_music,omitempty"`
+	SyncedAt time.Time             `json:"synced_at"`
 	// FullSyncAt is the last sync that re-read every release (details and
 	// cover), which happens once per SYNC_INTERVAL.
 	FullSyncAt time.Time `json:"full_sync_at"`
@@ -118,6 +125,9 @@ func openStore(dir string) (*Store, error) {
 	}
 	if s.data.MasterYears == nil {
 		s.data.MasterYears = map[int64]int{}
+	}
+	if s.data.Apple == nil {
+		s.data.Apple = map[int64]*AppleMatch{}
 	}
 	return s, nil
 }

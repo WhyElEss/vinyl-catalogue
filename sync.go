@@ -115,6 +115,11 @@ func (a *App) syncOnce(ctx context.Context, full bool) error {
 	} else if n > 0 {
 		log.Printf("sync: read details for %d releases in %s", n, time.Since(start).Round(time.Second))
 	}
+	// Apple Music last: it is slow (about 20 requests a minute) and only
+	// adds links. A failure leaves the links found so far.
+	if err := a.matchApple(ctx, releases); err != nil && ctx.Err() == nil {
+		log.Printf("sync: %v", err)
+	}
 	return nil
 }
 
@@ -166,6 +171,28 @@ func convertTracks(in []apiTrack) []Track {
 			tr.Sub = convertTracks(t.SubTracks)
 		}
 		out = append(out, tr)
+	}
+	return out
+}
+
+// barcodes are the release's barcodes: digits only, 12 or 13 of them, each once.
+func barcodes(rel apiRelease) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, id := range rel.Identifiers {
+		if id.Type != "Barcode" {
+			continue
+		}
+		v := strings.Map(func(r rune) rune {
+			if r >= '0' && r <= '9' {
+				return r
+			}
+			return -1
+		}, id.Value)
+		if (len(v) == 12 || len(v) == 13) && !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
 	}
 	return out
 }
@@ -300,7 +327,8 @@ func (a *App) fetchDetails(ctx context.Context, releases []Release, full bool) (
 				continue
 			}
 			seen[r.ID] = true
-			_, haveDetails := d.Details[r.ID]
+			det, haveDetails := d.Details[r.ID]
+			haveDetails = haveDetails && det.IDsRead
 			_, haveMaster := d.MasterYears[r.MasterID]
 			needMaster := r.MasterID != 0 && !haveMaster
 			switch {
@@ -327,7 +355,8 @@ func (a *App) fetchDetails(ctx context.Context, releases []Release, full bool) (
 				return read, fmt.Errorf("release %d: %w", j.id, err)
 			}
 			det := &Details{Country: rel.Country, Released: rel.Released, Notes: strings.TrimSpace(rel.Notes),
-				Tracklist: convertTracks(rel.Tracklist), Cover: primaryImage(rel), ReadAt: time.Now().UTC()}
+				Tracklist: convertTracks(rel.Tracklist), Cover: primaryImage(rel), ReadAt: time.Now().UTC(),
+				Barcodes: barcodes(rel), IDsRead: true}
 			a.store.mu.Lock()
 			a.store.data.Details[j.id] = det
 			a.store.mu.Unlock()

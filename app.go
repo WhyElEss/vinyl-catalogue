@@ -23,6 +23,7 @@ type App struct {
 	cfg       Config
 	store     *Store
 	discogs   *discogsAPI
+	apple     *appleAPI // nil turns the Apple Music search off (tests)
 	imgClient *http.Client
 	coversDir string
 	tpl       map[string]*template.Template
@@ -45,6 +46,7 @@ func newApp(cfg Config) (*App, error) {
 		cfg:       cfg,
 		store:     st,
 		discogs:   newDiscogsAPI("https://api.discogs.com", cfg.DiscogsToken),
+		apple:     newAppleAPI("https://itunes.apple.com"),
 		imgClient: &http.Client{Timeout: 30 * time.Second},
 		coversDir: covers,
 		tpl:       tpl,

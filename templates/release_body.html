@@ -27,6 +27,6 @@
       {{range .R.Notes}}<p>{{.}}</p>{{end}}
     </details>{{end}}
 
-    <p class="discogs-link"><a href="{{.R.DiscogsURL}}" rel="noopener" target="_blank">{{t "on_discogs"}} ↗</a></p>
+    <p class="discogs-link"><a href="{{.R.DiscogsURL}}" rel="noopener" target="_blank">{{t "on_discogs"}} ↗</a>{{if .R.AppleURL}}<a href="{{.R.AppleURL}}" rel="noopener" target="_blank">{{t "on_apple_music"}} ↗</a>{{end}}<a href="{{.R.SpotifyURL}}" rel="noopener" target="_blank" title="{{t "spotify_search"}}">{{t "on_spotify"}} ↗</a></p>
   </div>
 </article>{{end}}

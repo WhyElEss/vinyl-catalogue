@@ -162,6 +162,7 @@ func testAppPrimary(t *testing.T) (*App, *int, *string) {
 	}
 	a.discogs = newDiscogsAPI(srv.URL, "")
 	a.discogs.gap = 0
+	a.apple = nil // no Apple Music search against the real API in tests
 	if err := a.syncOnce(context.Background(), false); err != nil {
 		t.Fatal(err)
 	}

@@ -197,6 +197,10 @@ type apiRelease struct {
 		Type string `json:"type"`
 		URI  string `json:"uri"`
 	} `json:"images"`
+	Identifiers []struct {
+		Type  string `json:"type"`
+		Value string `json:"value"`
+	} `json:"identifiers"`
 }
 
 type apiMaster struct {

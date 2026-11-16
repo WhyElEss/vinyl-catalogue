@@ -29,6 +29,8 @@ type releaseView struct {
 	Notes        []string
 	HasDetails   bool
 	DiscogsURL   string
+	AppleURL     string
+	SpotifyURL   string
 }
 
 type releasePage struct {
@@ -117,6 +119,10 @@ func (a *App) makeReleaseView(d *Data, r *Release) releaseView {
 		Tags:         r.tags(),
 		Formats:      r.formatLines(),
 		DiscogsURL:   "https://www.discogs.com/release/" + strconv.FormatInt(r.ID, 10),
+		SpotifyURL:   spotifySearchURL(r),
+	}
+	if m := d.Apple[r.ID]; m.linked() {
+		v.AppleURL = appleAlbumURL(m.Album)
 	}
 	v.Labels, v.Catnos = labelsAndNumbers(r.Labels)
 	if det, ok := d.Details[r.ID]; ok {
