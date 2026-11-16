@@ -151,6 +151,9 @@ func TestMatchApple(t *testing.T) {
 	if !strings.Contains(body, `href="https://open.spotify.com/search/Bee%20Gees%20Main%20Course/albums"`) {
 		t.Errorf("card has no Spotify link:\n%s", body)
 	}
+	if n := strings.Count(body, `<svg class="icon"`); n != 3 {
+		t.Errorf("card has %d link icons, want 3 (Discogs, Apple Music, Spotify)", n)
+	}
 	n := len(calls)
 	if err := a.matchApple(context.Background(), releases); err != nil {
 		t.Fatal(err)

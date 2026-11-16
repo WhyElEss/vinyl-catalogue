@@ -330,7 +330,8 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .notes summary { cursor: pointer; }
 .notes p { white-space: pre-line; font-size: 14px; color: var(--muted); margin: 8px 0; overflow-wrap: anywhere; }
 .discogs-link { margin: 24px 0 0; font-size: 14px; display: flex; flex-wrap: wrap; gap: 6px 20px; }
-.discogs-link a { color: var(--accent); text-decoration: none; font-weight: 600; }
+.discogs-link a { color: var(--accent); text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.discogs-link .icon { width: 16px; height: 16px; flex: none; fill: currentColor; }
 .discogs-link a:hover { text-decoration: underline; }
 
 .foot { text-align: center; padding: 14px 16px 18px; font-size: 12px; color: var(--muted); }
