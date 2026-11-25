@@ -206,7 +206,8 @@ type indexPage struct {
 
 // clientTexts are the strings the page script needs.
 var clientTextKeys = []string{"of", "nothing", "prev", "next",
-	"close", "other", "prev_record", "next_record", "enter_stack", "order_asc", "order_desc", "various"}
+	"close", "other", "prev_record", "next_record", "enter_stack", "order_asc", "order_desc", "various",
+	"hint_touch", "hint_keys", "hint_fingers"}
 
 func (a *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 	p := indexPage{base: a.base(r)}

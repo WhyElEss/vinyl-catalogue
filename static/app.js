@@ -910,6 +910,59 @@
       go(start, true);
       updateCenter();
     });
+    showHint(wrap);
+  }
+
+  // ---- first-visit hint ----
+  // On the first visit a see-through finger shows the swipes (phones) or a
+  // small card lights the arrow keys and two trackpad fingers (computers),
+  // while the row nudges toward the next crate and the middle lid tips up.
+  // It goes at the first press or swipe, or after two rounds, and is not
+  // shown again in this browser. Only the browser remembers that (a
+  // localStorage flag, like the theme); the server knows nothing about
+  // visitors (owner chose variant A, 2026-11-25).
+  const HINT_KEY = "hint-gestures-1", HINT_MS = 4400, HINT_ROUNDS = 2;
+  let hint = null;
+  function hintSeen() {
+    try {
+      return localStorage.getItem(HINT_KEY) === "1";
+    } catch (e) {
+      return true; // no storage: never pester with a hint each visit
+    }
+  }
+  function showHint(wrap) {
+    if (hint || hideHint.done || hintSeen()) return;
+    const touch = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+    const box = el("div", "hint " + (touch ? "hint-touch" : "hint-desk"));
+    box.setAttribute("aria-hidden", "true");
+    if (touch) box.appendChild(el("div", "hint-finger"));
+    else {
+      const card = el("div", "hint-card");
+      const keys = el("div", "hint-keys");
+      for (const [c, k] of [["up", "↑"], ["l", "←"], ["d", "↓"], ["r", "→"]]) keys.appendChild(el("span", "hint-key " + c, k));
+      const pad = el("div", "hint-padcol");
+      pad.append(el("div", "hint-pad"), el("div", "", T.hint_fingers));
+      card.append(keys, pad, el("div", "hint-text", T.hint_keys));
+      box.appendChild(card);
+    }
+    if (touch) box.appendChild(el("div", "hint-chip", T.hint_touch));
+    wrap.appendChild(box);
+    wrap.classList.add("is-hinting");
+    hint = { box, wrap, timer: setTimeout(hideHint, reduceMotion.matches ? 6000 : HINT_MS * HINT_ROUNDS) };
+    stage.addEventListener("pointerdown", hideHint, { once: true });
+  }
+  function hideHint() {
+    hideHint.done = true;
+    if (!hint) return;
+    const { box, wrap, timer } = hint;
+    hint = null;
+    clearTimeout(timer);
+    try {
+      localStorage.setItem(HINT_KEY, "1");
+    } catch (e) {}
+    wrap.classList.remove("is-hinting");
+    box.classList.add("is-going");
+    setTimeout(() => box.remove(), 300);
   }
 
   // paintSlot draws stack i with record idx at the front.
@@ -1183,6 +1236,7 @@
   let pressFrom = "key";
   function press(key) {
     if (!rail || center < 0) return false;
+    hideHint();
     if (DEBUG) {
       dlog(["k", now(), key, pressFrom, center, aim], "PRESS " + key + " (" + pressFrom + ")");
       pressFrom = "key";

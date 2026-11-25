@@ -54,6 +54,9 @@ var texts = map[string]string{
 	"empty":          "The collection is being read from Discogs. Refresh the page in a minute.",
 	"other":          "Other",
 	"various":        "Various",
+	"hint_touch":     "Swipe ← → for crates · ↓ to dig in",
+	"hint_keys":      "← → crates · ↓ dig in · Enter opens a record",
+	"hint_fingers":   "or two fingers",
 }
 
 // t returns the interface text for key (the site is English only).
